@@ -1,0 +1,109 @@
+"""Ollama backend adapter — forwards requests to Ollama's OpenAI-compatible API."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any, AsyncIterator
+
+import httpx
+
+from filthyllm.backends.base import BackendAdapter
+from filthyllm.logging import get_logger
+from filthyllm.models import ChatCompletionRequest, ChatCompletionResponse
+
+log = get_logger(__name__)
+
+# Ollama exposes OpenAI-compatible endpoints at /v1/chat/completions
+_CHAT_PATH = "/v1/chat/completions"
+
+
+class OllamaAdapter(BackendAdapter):
+    def __init__(self, base_url: str, default_timeout: float = 120.0) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._default_timeout = default_timeout
+        self._client: httpx.AsyncClient | None = None
+
+    async def startup(self) -> None:
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url,
+            timeout=httpx.Timeout(self._default_timeout, connect=10.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+        log.info("ollama_adapter_started", base_url=self._base_url)
+
+    async def shutdown(self) -> None:
+        if self._client:
+            await self._client.aclose()
+            log.info("ollama_adapter_stopped", base_url=self._base_url)
+
+    def _build_payload(
+        self,
+        request: ChatCompletionRequest,
+        keep_alive: str | None = None,
+    ) -> dict[str, Any]:
+        payload = request.model_dump(exclude_none=True)
+        if keep_alive:
+            payload["keep_alive"] = keep_alive
+        return payload
+
+    async def chat_completion(
+        self,
+        request: ChatCompletionRequest,
+        timeout: float | None = None,
+        keep_alive: str | None = None,
+    ) -> ChatCompletionResponse:
+        if self._client is None:
+            raise RuntimeError("OllamaAdapter not started — call startup() first")
+        payload = self._build_payload(request, keep_alive)
+        payload["stream"] = False
+
+        effective_timeout = timeout or self._default_timeout
+        resp = await self._client.post(
+            _CHAT_PATH,
+            json=payload,
+            timeout=httpx.Timeout(effective_timeout, connect=10.0),
+        )
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+        except json.JSONDecodeError:
+            log.error("invalid_json_from_backend", body=resp.text[:500])
+            raise ValueError("Backend returned invalid JSON")
+        return ChatCompletionResponse.model_validate(data)
+
+    async def chat_completion_stream(
+        self,
+        request: ChatCompletionRequest,
+        timeout: float | None = None,
+        keep_alive: str | None = None,
+    ) -> AsyncIterator[bytes]:
+        if self._client is None:
+            raise RuntimeError("OllamaAdapter not started — call startup() first")
+        payload = self._build_payload(request, keep_alive)
+        payload["stream"] = True
+
+        effective_timeout = timeout or self._default_timeout
+        async with self._client.stream(
+            "POST",
+            _CHAT_PATH,
+            json=payload,
+            timeout=httpx.Timeout(effective_timeout, connect=10.0),
+        ) as resp:
+            resp.raise_for_status()
+            try:
+                async for line in resp.aiter_lines():
+                    if line:
+                        yield (line + "\n").encode()
+            except asyncio.CancelledError:
+                log.info("stream_cancelled_by_client")
+                raise
+
+    async def health_check(self) -> bool:
+        try:
+            if self._client is None:
+                return False
+            resp = await self._client.get("/", timeout=5.0)
+            return resp.status_code == 200
+        except Exception:
+            return False

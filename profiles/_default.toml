@@ -1,0 +1,19 @@
+# Default profile — fallback for unknown models
+
+[model]
+pattern = "*"
+max_retries = 3
+request_timeout = 45.0
+backend_timeout = 120.0
+
+[tool_calling]
+system_suffix = ""
+temperature_override = 0.0
+strip_thinking = false
+keep_alive = "5m"
+
+[escalation]
+enabled = false
+model = ""
+backend_url = ""
+timeout = 180.0
