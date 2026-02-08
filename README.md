@@ -27,6 +27,7 @@ Filthy Tool Fixer Proxy (:8079)
     ▼                          ▼
 Ollama :11434              Ollama :11435
 (fast tier, GPU)           (quality tier, hybrid)
+qwen3-coder:30b            qwen3-coder:480b
 qwen3:30b-a3b              qwen3:235b-a22b
 llama4:scout               llama4:maverick
 llama3.3:70b
@@ -334,6 +335,18 @@ The workhorse. Fast, reliable, and takes direction well. Runs fully on GPU (~10-
 The big gun. Runs hybrid CPU/GPU (~2-5 min per tool call depending on context), so you don't want it as your daily driver — but when the 30B can't figure it out, the 235B almost always can. Rarely needs retries (max_retries=1). Used primarily as the escalation target for the 30B.
 
 **Quirks**: Same `<think>` tag habit as its smaller sibling. Surprisingly good at recovering from the 30B's mistakes when given the same context — it seems to understand what went wrong and corrects course.
+
+### Qwen3-Coder 30B-A3B (MoE, 3.3B active)
+
+The star of the show. Same MoE architecture as regular Qwen3 30B but purpose-built for code and agentic tool use. Runs fully on GPU (~1-15s per tool call). Does **not** use `<think>` tags — no stripping needed. Produces clean, native tool calls on the first attempt most of the time. When the conversation gets deep (10+ tool rounds), it occasionally responds with text first, but the system prompt nudge corrects it immediately on the second attempt. Zero validation failures, zero escalations needed in testing. 256K native context window.
+
+In testing: 25+ consecutive requests at 100% success rate, 50 messages deep, sub-second responses on follow-up calls. This is the model to beat.
+
+**Quirks**: Occasionally wants to narrate mid-conversation (just like regular Qwen3), but self-corrects after a single nudge. No `<think>` tags, no embedded JSON blobs, no hallucinated parameters. Just clean tool calls. Escalates to the 480B if needed but hasn't needed to yet.
+
+### Qwen3-Coder 480B-A35B (MoE, 35B active) — *untested*
+
+The 480B quality-tier coder model. 290GB, runs hybrid CPU/GPU on port 11435. Profile exists and is configured as the escalation target for the 30B. 256K native context. Has not been validated yet in production.
 
 ### Llama 4 Maverick (400B MoE, 17B active)
 

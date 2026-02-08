@@ -1,0 +1,22 @@
+# Qwen3-Coder 480B-A35B — code-specialized MoE (35B active), quality tier
+# Unlike regular Qwen3, does NOT use <think> tags
+# 290GB model — runs hybrid CPU/GPU on port 11435
+
+[model]
+pattern = "qwen3-coder:480b*"
+backend_url = "http://localhost:11435"
+max_retries = 1
+request_timeout = 900.0
+backend_timeout = 600.0
+
+[tool_calling]
+system_suffix = "CRITICAL RULES FOR TOOL USE:\n1. You MUST use the provided tools — never respond with text descriptions of what you would do.\n2. MATCH TOOLS TO INTENT: For questions or exploration, use READ-ONLY tools (read, glob, grep, list_dir, bash). Only use write/edit tools when the user explicitly asks to create or modify something.\n3. START by reading relevant files (package.json, pyproject.toml, README, etc.) to understand the project before taking any action.\n4. Never invent tool names or parameters not in the provided definitions.\n5. Never ask the user which files to look at — find them yourself.\n6. Call the SIMPLEST tool that accomplishes the task. Prefer read over bash, glob over bash."
+temperature_override = 0.0
+strip_thinking = false
+keep_alive = "30m"
+condense_tools = true
+condense_system_prompt = true
+max_system_tokens = 800
+
+[escalation]
+enabled = false
