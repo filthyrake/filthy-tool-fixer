@@ -1,0 +1,25 @@
+# GPT-OSS 20B — OpenAI open-weight MoE (3.6B active), fast tier
+# ~12GB, fits entirely on A30. Purpose-built for tool calling.
+# Matches o3-mini on TauBench. Ships pre-quantized MXFP4.
+
+[model]
+pattern = "gpt-oss:*"
+max_retries = 3
+request_timeout = 360.0
+backend_timeout = 120.0
+
+[tool_calling]
+system_suffix = "You MUST use the provided tools to complete the task. Never respond with text descriptions of what you would do — call the tool directly. When calling tools, match the schema EXACTLY: check nested object structures, required fields, and array types. START by reading relevant project files to understand context before taking action."
+temperature_override = 0.0
+strip_thinking = false
+keep_alive = "30m"
+condense_tools = true
+condense_system_prompt = true
+max_system_tokens = 800
+accept_text_after_tool_use = true
+
+[escalation]
+enabled = true
+model = "gpt-oss:120b"
+backend_url = "http://localhost:11435"
+timeout = 300.0

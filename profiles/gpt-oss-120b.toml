@@ -1,0 +1,23 @@
+# GPT-OSS 120B — OpenAI open-weight MoE (5.1B active), quality tier
+# ~60-70GB MXFP4, hybrid CPU/GPU on port 11435. Purpose-built for tool calling.
+# Matches o4-mini on TauBench. Ships pre-quantized MXFP4.
+
+[model]
+pattern = "gpt-oss:120b*"
+backend_url = "http://localhost:11435"
+max_retries = 2
+request_timeout = 900.0
+backend_timeout = 600.0
+
+[tool_calling]
+system_suffix = "You MUST use the provided tools to complete the task. Never respond with text descriptions of what you would do — call the tool directly. When calling tools, match the schema EXACTLY: check nested object structures, required fields, and array types. START by reading relevant project files to understand context before taking action."
+temperature_override = 0.0
+strip_thinking = false
+keep_alive = "30m"
+condense_tools = true
+condense_system_prompt = true
+max_system_tokens = 800
+accept_text_after_tool_use = true
+
+[escalation]
+enabled = false
