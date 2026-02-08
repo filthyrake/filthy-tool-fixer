@@ -1,7 +1,7 @@
 # Llama 4 Scout — 109B MoE (17B active), fast tier
 
 [model]
-pattern = "llama4:*"
+pattern = "llama4:scout*"
 max_retries = 3
 request_timeout = 300.0
 backend_timeout = 120.0

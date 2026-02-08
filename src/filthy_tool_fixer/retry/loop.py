@@ -755,6 +755,9 @@ class RetryLoop:
         tool_list = request.tools or tools or []
         names = [t.function.name for t in tool_list]
 
+        if not names:
+            return request.model_copy(update={"messages": messages})
+
         # Build actionable guidance with tool-specific hints
         hints = []
         if "read" in names:

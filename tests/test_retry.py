@@ -350,7 +350,7 @@ class TestToolCallRescue:
         loop = RetryLoop(backend=backend, profile=profile)
 
         request = make_request(tools=sample_tools)
-        response, headers = await loop.execute(
+        await loop.execute(
             request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
         )
 

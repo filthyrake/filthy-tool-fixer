@@ -249,7 +249,7 @@ class ProxyOrchestrator:
         enhanced = self._enhance_request(request, profile)
         backend = self._select_backend(profile)
 
-        if not self._has_tools(request):
+        if not self._has_tools(enhanced):
             # No tools — pure passthrough (streaming or non-streaming)
             if request.stream:
                 return backend.chat_completion_stream(
