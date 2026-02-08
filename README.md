@@ -347,11 +347,9 @@ The eager but confused intern. Scout wants to help but needs firm guardrails. Re
 
 **Quirks**: Will describe tool usage in perfect detail without ever calling the tool. Needs the tool guide baked into the system prompt with example argument shapes. Runs on the fast Ollama instance but don't expect miracles.
 
-### Llama 3.3 70B (Dense)
+### Llama 3.3 70B (Dense) — *untested*
 
-The reliable generalist. A dense 70B that doesn't try to be clever — it reads the instructions, picks a tool, and calls it. Solid tool caller that benefits from the same system prompt nudging as Qwen. Temperature override to 0.0 keeps it deterministic. Escalates to Maverick when stuck.
-
-**Quirks**: Less creative than the MoE models but more predictable. Doesn't narrate as aggressively as the Llama 4 family. A good fallback if the newer models are being temperamental.
+Profile exists but hasn't been validated yet. Configuration assumes it behaves similarly to the Llama 4 family (system prompt nudging, `accept_text_after_tool_use`, escalation to Maverick). If you test it, let us know how it goes.
 
 ## Development
 
