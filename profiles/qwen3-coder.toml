@@ -15,6 +15,7 @@ keep_alive = "30m"
 condense_tools = true
 condense_system_prompt = true
 max_system_tokens = 800
+accept_text_after_tool_use = true
 
 [escalation]
 enabled = true
