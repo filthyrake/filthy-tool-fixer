@@ -437,6 +437,31 @@ class TestToolCallRescue:
         assert tc.function.arguments == "{}"
 
     @pytest.mark.asyncio
+    async def test_rescue_embedded_json_in_mixed_text(self, sample_tools, profile):
+        # Maverick pattern: text explanation + JSON tool call at the end
+        narrated = make_response(
+            content=(
+                "The project appears to be Python-based. Let me check the dependencies.\n\n"
+                '{"name": "search_files", "parameters": {"query": "requirements"}}'
+            )
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Should rescue the embedded tool call AND keep the text
+        assert backend.call_count == 1
+        assert response.choices[0].message.tool_calls is not None
+        assert response.choices[0].message.tool_calls[0].function.name == "search_files"
+        assert "Python-based" in response.choices[0].message.content
+        # JSON blob should be removed from content
+        assert '{"name"' not in response.choices[0].message.content
+
+    @pytest.mark.asyncio
     async def test_no_rescue_for_plain_text(self, sample_tools, profile):
         # Regular text response — should NOT be rescued
         text1 = make_response(content="I can help you with that!")

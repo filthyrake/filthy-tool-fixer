@@ -104,6 +104,23 @@ class RetryLoop:
                         names=[tc.function.name for tc in rescued],
                         args=[tc.function.arguments[:200] for tc in rescued],
                     )
+                else:
+                    # Try extracting tool calls embedded in mixed text+JSON
+                    embedded, cleaned = self._rescue_embedded_tool_calls(
+                        response, tools
+                    )
+                    if embedded:
+                        tool_calls = embedded
+                        response.choices[0].message.tool_calls = embedded
+                        response.choices[0].message.content = cleaned
+                        response.choices[0].finish_reason = "tool_calls"
+                        log.info(
+                            "tool_calls_rescued_from_mixed_text",
+                            attempt=attempt,
+                            count=len(embedded),
+                            names=[tc.function.name for tc in embedded],
+                            kept_text_len=len(cleaned),
+                        )
 
             if tool_calls:
                 ever_attempted_tools = True
@@ -425,6 +442,58 @@ class RetryLoop:
                 rescued.append(tc)
 
         return rescued if rescued else None
+
+    def _rescue_embedded_tool_calls(
+        self,
+        response: ChatCompletionResponse,
+        tools: list[ToolDefinition],
+    ) -> tuple[list[ToolCall], str] | tuple[None, str]:
+        """Extract tool call JSON embedded in mixed text content.
+
+        Handles the common Maverick pattern of narrating what it will do
+        and then appending a JSON tool call at the end of the text.
+        Returns (tool_calls, cleaned_text) or (None, original_text).
+        """
+        if not response.choices or not response.choices[0].message:
+            return None, ""
+        content = (response.choices[0].message.content or "").strip()
+        if not content:
+            return None, ""
+
+        tool_names = {t.function.name for t in tools}
+        decoder = json.JSONDecoder()
+        rescued: list[ToolCall] = []
+        regions_to_remove: list[tuple[int, int]] = []
+
+        pos = 0
+        while pos < len(content):
+            idx = content.find("{", pos)
+            if idx == -1:
+                break
+            try:
+                obj, end_idx = decoder.raw_decode(content, idx)
+            except json.JSONDecodeError:
+                pos = idx + 1
+                continue
+
+            if isinstance(obj, dict):
+                tc = self._parse_narrated_tool_call(obj, tool_names)
+                if tc:
+                    rescued.append(tc)
+                    regions_to_remove.append((idx, end_idx))
+
+            pos = end_idx
+
+        if not rescued:
+            return None, content
+
+        # Remove the JSON blobs from the text, working backwards
+        cleaned = content
+        for start, end in reversed(regions_to_remove):
+            cleaned = cleaned[:start] + cleaned[end:]
+        cleaned = cleaned.strip()
+
+        return rescued, cleaned
 
     def _parse_llama_native_calls(
         self,
