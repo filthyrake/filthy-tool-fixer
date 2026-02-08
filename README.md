@@ -359,9 +359,11 @@ In testing: 25+ consecutive requests at 100% success rate, 50 messages deep, sub
 
 **Quirks**: Occasionally wants to narrate mid-conversation (just like regular Qwen3), but self-corrects after a single nudge. Without `accept_text_after_tool_use = true`, it will loop forever making tool calls instead of giving a final answer — a coding model that literally can't stop coding. No `<think>` tags, no embedded JSON blobs, no hallucinated parameters. Just clean tool calls. Escalates to the 480B if needed but hasn't needed to yet.
 
-### Qwen3-Coder 480B-A35B (MoE, 35B active) — *untested*
+### Qwen3-Coder 480B-A35B (MoE, 35B active) — *limited validation*
 
-The 480B quality-tier coder model. 290GB, runs hybrid CPU/GPU on port 11435. Profile exists and is configured as the escalation target for the 30B. 256K native context. Has not been validated yet in production.
+The 480B quality-tier coder model. 290GB, runs hybrid CPU/GPU on port 11435. 256K native context. Tool call accuracy is **perfect** — every completion validated first attempt with zero retries. The catch is speed: ~1-2 minutes per turn on short contexts, and longer conversations (8+ messages) can exceed the 900s timeout. This is a hardware limitation (301GB model on 377GB RAM with only 24GB VRAM), not a model quality issue. With more GPU memory this model would fly.
+
+**Quirks**: Same clean tool-calling behavior as the 30B — no `<think>` tags, no embedded JSON. Escalation is disabled since there's nothing bigger to escalate to. Best suited for short, high-stakes exchanges where quality matters more than speed.
 
 ### Llama 4 Maverick (400B MoE, 17B active)
 
@@ -394,6 +396,6 @@ ssh user@YOUR_SERVER_IP "cd ~ && tar xzf filthy-tool-fixer.tar.gz && rm filthy-t
 
 - **Server**: Intel Xeon Platinum 8160, NVIDIA A30 24GB, 377GB RAM
 - **Qwen3-Coder 30B**: 19GB, runs fully on GPU (~1-15s per tool call)
-- **Qwen3-Coder 480B**: 290GB, runs hybrid CPU/GPU (timing TBD — untested)
+- **Qwen3-Coder 480B**: 290GB, runs hybrid CPU/GPU (~1-2 min per turn, limited by RAM bandwidth)
 - **Qwen3 30B**: 18GB, runs fully on GPU (~10-18s per tool call with validation)
 - **Qwen3 235B**: 142GB, runs hybrid CPU/GPU (~2-5 min per tool call depending on context size)
