@@ -6,7 +6,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from filthyllm.profiles.loader import ProfileLoader
+from filthy_tool_fixer.profiles.loader import ProfileLoader
 
 
 class TestProfileLoading:

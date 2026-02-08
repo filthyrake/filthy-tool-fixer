@@ -5,7 +5,7 @@ from __future__ import annotations
 import abc
 from typing import AsyncIterator
 
-from filthyllm.models import ChatCompletionRequest, ChatCompletionResponse
+from filthy_tool_fixer.models import ChatCompletionRequest, ChatCompletionResponse
 
 
 class BackendAdapter(abc.ABC):

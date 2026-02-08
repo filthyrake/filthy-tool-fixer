@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator
 
-from filthyllm.backends.base import BackendAdapter
-from filthyllm.models import (
+from filthy_tool_fixer.backends.base import BackendAdapter
+from filthy_tool_fixer.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,

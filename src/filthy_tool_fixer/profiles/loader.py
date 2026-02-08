@@ -6,8 +6,8 @@ import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
 
-from filthyllm.logging import get_logger
-from filthyllm.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
+from filthy_tool_fixer.logging import get_logger
+from filthy_tool_fixer.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
 
 log = get_logger(__name__)
 

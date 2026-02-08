@@ -6,11 +6,11 @@ import time
 
 import pytest
 
-from filthyllm.models import ChatMessage, ToolDefinition
-from filthyllm.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
-from filthyllm.retry.feedback import build_feedback_message
-from filthyllm.retry.loop import RetryLoop
-from filthyllm.validation.schema import ValidationError, ValidationResult
+from filthy_tool_fixer.models import ChatMessage, ToolDefinition
+from filthy_tool_fixer.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
+from filthy_tool_fixer.retry.feedback import build_feedback_message
+from filthy_tool_fixer.retry.loop import RetryLoop
+from filthy_tool_fixer.validation.schema import ValidationError, ValidationResult
 
 from tests.helpers import MockBackend, make_request, make_response, make_tool_call
 
@@ -90,7 +90,7 @@ class TestRetryLoop:
         )
 
         assert backend.call_count == 1
-        assert "X-FilthyLLM-Degraded" not in headers
+        assert "X-FilthyToolFixer-Degraded" not in headers
 
     @pytest.mark.asyncio
     async def test_retry_on_invalid_then_succeed(self, sample_tools, profile):
@@ -109,7 +109,7 @@ class TestRetryLoop:
         )
 
         assert backend.call_count == 2
-        assert "X-FilthyLLM-Degraded" not in headers
+        assert "X-FilthyToolFixer-Degraded" not in headers
         # Second request should contain feedback
         second_req = backend.requests[1]
         assert any("does not exist" in (m.content or "") for m in second_req.messages)
@@ -185,7 +185,7 @@ class TestRetryLoop:
 
         # Should stop after detecting duplicate, not exhaust all retries
         assert backend.call_count == 2
-        assert headers.get("X-FilthyLLM-Degraded") == "true"
+        assert headers.get("X-FilthyToolFixer-Degraded") == "true"
 
     @pytest.mark.asyncio
     async def test_all_retries_exhausted(self, sample_tools, profile):
@@ -201,7 +201,7 @@ class TestRetryLoop:
         )
 
         assert backend.call_count == 3  # initial + 2 retries
-        assert headers.get("X-FilthyLLM-Degraded") == "true"
+        assert headers.get("X-FilthyToolFixer-Degraded") == "true"
 
 
 class TestEscalation:
@@ -238,8 +238,8 @@ class TestEscalation:
 
         assert primary.call_count == 1
         assert escalation.call_count == 1
-        assert headers.get("X-FilthyLLM-Escalated") == "true"
-        assert headers.get("X-FilthyLLM-Model") == "qwen3:235b-a22b"
+        assert headers.get("X-FilthyToolFixer-Escalated") == "true"
+        assert headers.get("X-FilthyToolFixer-Model") == "qwen3:235b-a22b"
 
     @pytest.mark.asyncio
     async def test_escalation_also_fails(self, sample_tools):
@@ -269,7 +269,7 @@ class TestEscalation:
             request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
         )
 
-        assert headers.get("X-FilthyLLM-Degraded") == "true"
+        assert headers.get("X-FilthyToolFixer-Degraded") == "true"
 
     @pytest.mark.asyncio
     async def test_no_escalation_when_disabled(self, sample_tools):
@@ -295,7 +295,7 @@ class TestEscalation:
         )
 
         assert escalation.call_count == 0
-        assert headers.get("X-FilthyLLM-Degraded") == "true"
+        assert headers.get("X-FilthyToolFixer-Degraded") == "true"
 
 
 class TestBestAttemptScoring:

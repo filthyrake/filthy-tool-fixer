@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from filthyllm.models import ChatMessage
-from filthyllm.validation.schema import ValidationError, ValidationResult
+from filthy_tool_fixer.models import ChatMessage
+from filthy_tool_fixer.validation.schema import ValidationError, ValidationResult
 
 
 def build_feedback_message(result: ValidationResult) -> ChatMessage:

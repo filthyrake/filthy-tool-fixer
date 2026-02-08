@@ -10,17 +10,17 @@ from typing import AsyncIterator
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from filthyllm.backends.ollama import OllamaAdapter
-from filthyllm.config import settings
-from filthyllm.logging import (
+from filthy_tool_fixer.backends.ollama import OllamaAdapter
+from filthy_tool_fixer.config import settings
+from filthy_tool_fixer.logging import (
     generate_request_id,
     get_logger,
     request_id_var,
     setup_logging,
 )
-from filthyllm.models import ChatCompletionRequest
-from filthyllm.profiles.loader import ProfileLoader
-from filthyllm.proxy import ProxyOrchestrator
+from filthy_tool_fixer.models import ChatCompletionRequest
+from filthy_tool_fixer.profiles.loader import ProfileLoader
+from filthy_tool_fixer.proxy import ProxyOrchestrator
 
 log = get_logger(__name__)
 
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("stopped")
 
 
-app = FastAPI(title="FilthyLLM", lifespan=lifespan)
+app = FastAPI(title="Filthy Tool Fixer", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -219,13 +219,13 @@ async def chat_completions(request: Request):
         return StreamingResponse(
             result,
             media_type="text/event-stream",
-            headers={"X-FilthyLLM-Request-ID": rid},
+            headers={"X-FilthyToolFixer-Request-ID": rid},
         )
 
     # Buffered response (tool-calling path returns (response, headers) tuple)
     if isinstance(result, tuple):
         response, extra_headers = result
-        headers = {"X-FilthyLLM-Request-ID": rid}
+        headers = {"X-FilthyToolFixer-Request-ID": rid}
         headers.update(extra_headers)
         log.info(
             "response_complete",
@@ -250,7 +250,7 @@ async def chat_completions(request: Request):
     log.info("response_complete", elapsed_ms=round(elapsed * 1000))
     return JSONResponse(
         content=result.model_dump(exclude_none=True),
-        headers={"X-FilthyLLM-Request-ID": rid},
+        headers={"X-FilthyToolFixer-Request-ID": rid},
     )
 
 

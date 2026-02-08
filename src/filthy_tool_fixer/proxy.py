@@ -7,19 +7,19 @@ import re
 import time
 from typing import AsyncIterator
 
-from filthyllm.backends.base import BackendAdapter
-from filthyllm.config import settings
-from filthyllm.logging import get_logger
-from filthyllm.models import (
+from filthy_tool_fixer.backends.base import BackendAdapter
+from filthy_tool_fixer.config import settings
+from filthy_tool_fixer.logging import get_logger
+from filthy_tool_fixer.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
     FunctionDefinition,
     ToolDefinition,
 )
-from filthyllm.profiles.types import ModelProfile
-from filthyllm.retry.loop import RetryLoop
-from filthyllm.validation.schema import validate_tool_calls, ValidationResult
+from filthy_tool_fixer.profiles.types import ModelProfile
+from filthy_tool_fixer.retry.loop import RetryLoop
+from filthy_tool_fixer.validation.schema import validate_tool_calls, ValidationResult
 
 log = get_logger(__name__)
 

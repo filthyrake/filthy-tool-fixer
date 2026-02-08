@@ -35,7 +35,7 @@ Non-tool requests are pure streaming passthrough. Tool-calling requests are buff
 
 ```bash
 # On the server (YOUR_SERVER_IP)
-cd ~/filthyllm
+cd ~/filthy-tool-fixer
 cp .env.example .env        # edit if needed
 source .venv/bin/activate
 ./start.sh
@@ -249,11 +249,11 @@ Tool-calling responses include observability headers:
 
 | Header | Description |
 |--------|-------------|
-| `X-FilthyLLM-Request-ID` | Unique request ID (correlates with logs) |
-| `X-FilthyLLM-Attempts` | Number of attempts before success |
-| `X-FilthyLLM-Escalated` | `true` if quality model was used |
-| `X-FilthyLLM-Model` | Actual model used (when escalated) |
-| `X-FilthyLLM-Degraded` | `true` if all attempts failed |
+| `X-FilthyToolFixer-Request-ID` | Unique request ID (correlates with logs) |
+| `X-FilthyToolFixer-Attempts` | Number of attempts before success |
+| `X-FilthyToolFixer-Escalated` | `true` if quality model was used |
+| `X-FilthyToolFixer-Model` | Actual model used (when escalated) |
+| `X-FilthyToolFixer-Degraded` | `true` if all attempts failed |
 
 ## Health checks
 
@@ -274,27 +274,27 @@ Create an `opencode.json` in your project root pointing at the proxy:
 ```json
 {
   "providers": {
-    "filthyllm": {
+    "filthy-tool-fixer": {
       "type": "openai",
       "url": "http://YOUR_SERVER_IP:8079/v1/"
     }
   },
   "models": {
-    "filthyllm/qwen3:30b-a3b": {
-      "provider": "filthyllm",
+    "filthy-tool-fixer/qwen3:30b-a3b": {
+      "provider": "filthy-tool-fixer",
       "model": "qwen3:30b-a3b",
       "maxTokens": 16384,
       "contextWindow": 32768
     },
-    "filthyllm/qwen3:235b-a22b": {
-      "provider": "filthyllm",
+    "filthy-tool-fixer/qwen3:235b-a22b": {
+      "provider": "filthy-tool-fixer",
       "model": "qwen3:235b-a22b",
       "maxTokens": 16384,
       "contextWindow": 32768
     }
   },
   "agent": {
-    "model": "filthyllm/qwen3:30b-a3b"
+    "model": "filthy-tool-fixer/qwen3:30b-a3b"
   }
 }
 ```
@@ -303,13 +303,13 @@ Then add credentials and run:
 
 ```bash
 # Add to ~/.local/share/opencode/auth.json:
-# "filthyllm": {"type": "api", "key": "not-needed"}
+# "filthy-tool-fixer": {"type": "api", "key": "not-needed"}
 
 # Run with 30B (fast, ~10-18s per tool call)
-opencode -m filthyllm/qwen3:30b-a3b
+opencode -m filthy-tool-fixer/qwen3:30b-a3b
 
 # Run with 235B (quality, ~2-5 min per tool call)
-opencode -m filthyllm/qwen3:235b-a22b
+opencode -m filthy-tool-fixer/qwen3:235b-a22b
 ```
 
 ## Development
@@ -320,9 +320,9 @@ source .venv/bin/activate
 pytest tests/ -v
 
 # Deploy to server (no rsync available, use tar+scp)
-tar czf /tmp/filthyllm.tar.gz --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='.env' --exclude='.claude' --exclude='opencode.json' -C ~ filthyllm
-scp /tmp/filthyllm.tar.gz user@YOUR_SERVER_IP:~/
-ssh user@YOUR_SERVER_IP "cd ~ && tar xzf filthyllm.tar.gz && rm filthyllm.tar.gz"
+tar czf /tmp/filthy-tool-fixer.tar.gz --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='.env' --exclude='.claude' --exclude='opencode.json' -C ~ filthy-tool-fixer
+scp /tmp/filthy-tool-fixer.tar.gz user@YOUR_SERVER_IP:~/
+ssh user@YOUR_SERVER_IP "cd ~ && tar xzf filthy-tool-fixer.tar.gz && rm filthy-tool-fixer.tar.gz"
 ```
 
 ## Hardware

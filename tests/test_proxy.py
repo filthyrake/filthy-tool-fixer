@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from filthyllm.models import ChatCompletionResponse, ChatMessage
-from filthyllm.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
-from filthyllm.proxy import ProxyOrchestrator
+from filthy_tool_fixer.models import ChatCompletionResponse, ChatMessage
+from filthy_tool_fixer.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
+from filthy_tool_fixer.proxy import ProxyOrchestrator
 
 from tests.helpers import MockBackend, make_request, make_response, make_tool_call
 

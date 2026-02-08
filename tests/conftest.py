@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from filthyllm.models import FunctionDefinition, ToolDefinition
-from filthyllm.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
+from filthy_tool_fixer.models import FunctionDefinition, ToolDefinition
+from filthy_tool_fixer.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
 
 
 @pytest.fixture

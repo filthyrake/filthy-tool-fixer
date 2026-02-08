@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "filthyllm"
+name = "filthy-tool-fixer"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/filthyllm"]
+packages = ["src/filthy_tool_fixer"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

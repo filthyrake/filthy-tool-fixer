@@ -6,17 +6,17 @@ import json
 import time
 from typing import Any
 
-from filthyllm.backends.base import BackendAdapter
-from filthyllm.logging import get_logger
-from filthyllm.models import (
+from filthy_tool_fixer.backends.base import BackendAdapter
+from filthy_tool_fixer.logging import get_logger
+from filthy_tool_fixer.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
     ToolDefinition,
 )
-from filthyllm.profiles.types import ModelProfile
-from filthyllm.retry.feedback import build_feedback_message
-from filthyllm.validation.schema import ValidationResult, validate_tool_calls
+from filthy_tool_fixer.profiles.types import ModelProfile
+from filthy_tool_fixer.retry.feedback import build_feedback_message
+from filthy_tool_fixer.validation.schema import ValidationResult, validate_tool_calls
 
 log = get_logger(__name__)
 
@@ -42,7 +42,7 @@ class RetryLoop:
         """Execute the retry loop with optional escalation.
 
         Returns (response, extra_headers) where extra_headers contains
-        metadata like X-FilthyLLM-Model and X-FilthyLLM-Degraded.
+        metadata like X-FilthyToolFixer-Model and X-FilthyToolFixer-Degraded.
         """
         extra_headers: dict[str, str] = {}
 
@@ -102,7 +102,7 @@ class RetryLoop:
                         attempt=attempt,
                         finish_reason=finish,
                     )
-                    extra_headers["X-FilthyLLM-Attempts"] = str(attempt + 1)
+                    extra_headers["X-FilthyToolFixer-Attempts"] = str(attempt + 1)
                     return response, extra_headers
 
                 log.info(
@@ -122,7 +122,7 @@ class RetryLoop:
             result = validate_tool_calls(tool_calls, tools)
             if result.valid:
                 log.info("tool_calls_valid", attempt=attempt)
-                extra_headers["X-FilthyLLM-Attempts"] = str(attempt + 1)
+                extra_headers["X-FilthyToolFixer-Attempts"] = str(attempt + 1)
                 return response, extra_headers
 
             # Check for duplicate invalid response (same errors = model stuck)
@@ -156,18 +156,18 @@ class RetryLoop:
                 request, tools, best_response, start_time
             )
             if escalation_response:
-                extra_headers["X-FilthyLLM-Model"] = self._profile.escalation.model
-                extra_headers["X-FilthyLLM-Escalated"] = "true"
+                extra_headers["X-FilthyToolFixer-Model"] = self._profile.escalation.model
+                extra_headers["X-FilthyToolFixer-Escalated"] = "true"
                 return escalation_response, extra_headers
 
         # Total failure — return best attempt with degraded header
-        extra_headers["X-FilthyLLM-Degraded"] = "true"
+        extra_headers["X-FilthyToolFixer-Degraded"] = "true"
         if best_response:
             return best_response, extra_headers
 
         # No response at all (e.g. all attempts timed out)
         log.error("no_response_obtained")
-        from filthyllm.models import ChatMessage, Choice, Usage
+        from filthy_tool_fixer.models import ChatMessage, Choice, Usage
 
         fallback = ChatCompletionResponse(
             id="error",

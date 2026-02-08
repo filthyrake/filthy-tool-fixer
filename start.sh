@@ -14,7 +14,7 @@ fi
 HOST="${FILTHY_HOST:-0.0.0.0}"
 PORT="${FILTHY_PORT:-8079}"
 
-exec uvicorn filthyllm.main:app \
+exec uvicorn filthy_tool_fixer.main:app \
     --host "$HOST" \
     --port "$PORT" \
     --log-level warning \

@@ -8,7 +8,7 @@ import uuid
 
 import structlog
 
-from filthyllm.config import settings
+from filthy_tool_fixer.config import settings
 
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "request_id", default=""

@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from filthyllm.models import FunctionCall, ToolCall
-from filthyllm.validation.schema import validate_tool_calls
+from filthy_tool_fixer.models import FunctionCall, ToolCall
+from filthy_tool_fixer.validation.schema import validate_tool_calls
 
 from tests.helpers import make_tool_call
 

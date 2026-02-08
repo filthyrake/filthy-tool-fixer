@@ -1,24 +1,52 @@
-"""Ollama backend adapter — forwards requests to Ollama's OpenAI-compatible API."""
+"""vLLM backend adapter with constrained decoding support."""
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any, AsyncIterator
 
 import httpx
 
-from filthyllm.backends.base import BackendAdapter
-from filthyllm.logging import get_logger
-from filthyllm.models import ChatCompletionRequest, ChatCompletionResponse
+from filthy_tool_fixer.backends.base import BackendAdapter
+from filthy_tool_fixer.logging import get_logger
+from filthy_tool_fixer.models import ChatCompletionRequest, ChatCompletionResponse, ToolDefinition
 
 log = get_logger(__name__)
 
-# Ollama exposes OpenAI-compatible endpoints at /v1/chat/completions
 _CHAT_PATH = "/v1/chat/completions"
 
 
-class OllamaAdapter(BackendAdapter):
+def build_tool_call_schema(tools: list[ToolDefinition]) -> dict[str, Any]:
+    """Generate a JSON schema from tool definitions for constrained decoding.
+
+    Produces a schema that forces the model to output a valid tool call
+    matching one of the provided tool definitions.
+    """
+    if not tools:
+        return {}
+
+    tool_schemas = []
+    for tool in tools:
+        func = tool.function
+        # Each tool call has name + arguments matching the tool's parameter schema
+        tool_schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "const": func.name},
+                "arguments": func.parameters if func.parameters else {"type": "object"},
+            },
+            "required": ["name", "arguments"],
+            "additionalProperties": False,
+        }
+        tool_schemas.append(tool_schema)
+
+    if len(tool_schemas) == 1:
+        return tool_schemas[0]
+
+    return {"oneOf": tool_schemas}
+
+
+class VLLMAdapter(BackendAdapter):
     def __init__(self, base_url: str, default_timeout: float = 120.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._default_timeout = default_timeout
@@ -30,12 +58,12 @@ class OllamaAdapter(BackendAdapter):
             timeout=httpx.Timeout(self._default_timeout, connect=10.0),
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
-        log.info("ollama_adapter_started", base_url=self._base_url)
+        log.info("vllm_adapter_started", base_url=self._base_url)
 
     async def shutdown(self) -> None:
         if self._client:
             await self._client.aclose()
-            log.info("ollama_adapter_stopped", base_url=self._base_url)
+            log.info("vllm_adapter_stopped", base_url=self._base_url)
 
     def _build_payload(
         self,
@@ -43,8 +71,14 @@ class OllamaAdapter(BackendAdapter):
         keep_alive: str | None = None,
     ) -> dict[str, Any]:
         payload = request.model_dump(exclude_none=True)
-        if keep_alive:
-            payload["keep_alive"] = keep_alive
+
+        # Inject guided_json for constrained decoding when tools are present
+        if request.tools:
+            schema = build_tool_call_schema(request.tools)
+            if schema:
+                payload["extra_body"] = {"guided_json": json.dumps(schema)}
+                log.debug("vllm_constrained_decoding", schema_keys=list(schema.keys()))
+
         return payload
 
     async def chat_completion(
@@ -53,8 +87,7 @@ class OllamaAdapter(BackendAdapter):
         timeout: float | None = None,
         keep_alive: str | None = None,
     ) -> ChatCompletionResponse:
-        if self._client is None:
-            raise RuntimeError("OllamaAdapter not started — call startup() first")
+        assert self._client is not None
         payload = self._build_payload(request, keep_alive)
         payload["stream"] = False
 
@@ -65,12 +98,7 @@ class OllamaAdapter(BackendAdapter):
             timeout=httpx.Timeout(effective_timeout, connect=10.0),
         )
         resp.raise_for_status()
-        try:
-            data = resp.json()
-        except json.JSONDecodeError:
-            log.error("invalid_json_from_backend", body=resp.text[:500])
-            raise ValueError("Backend returned invalid JSON")
-        return ChatCompletionResponse.model_validate(data)
+        return ChatCompletionResponse.model_validate(resp.json())
 
     async def chat_completion_stream(
         self,
@@ -78,8 +106,7 @@ class OllamaAdapter(BackendAdapter):
         timeout: float | None = None,
         keep_alive: str | None = None,
     ) -> AsyncIterator[bytes]:
-        if self._client is None:
-            raise RuntimeError("OllamaAdapter not started — call startup() first")
+        assert self._client is not None
         payload = self._build_payload(request, keep_alive)
         payload["stream"] = True
 
@@ -91,19 +118,14 @@ class OllamaAdapter(BackendAdapter):
             timeout=httpx.Timeout(effective_timeout, connect=10.0),
         ) as resp:
             resp.raise_for_status()
-            try:
-                async for line in resp.aiter_lines():
-                    if line:
-                        yield (line + "\n").encode()
-            except asyncio.CancelledError:
-                log.info("stream_cancelled_by_client")
-                raise
+            async for line in resp.aiter_lines():
+                if line:
+                    yield (line + "\n").encode()
 
     async def health_check(self) -> bool:
         try:
-            if self._client is None:
-                return False
-            resp = await self._client.get("/", timeout=5.0)
+            assert self._client is not None
+            resp = await self._client.get("/health", timeout=5.0)
             return resp.status_code == 200
         except Exception:
             return False

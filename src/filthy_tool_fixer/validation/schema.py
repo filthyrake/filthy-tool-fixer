@@ -8,7 +8,7 @@ from difflib import get_close_matches
 
 import jsonschema
 
-from filthyllm.models import ToolCall, ToolDefinition
+from filthy_tool_fixer.models import ToolCall, ToolDefinition
 
 _MAX_TOOL_CALLS = 50
 _MAX_ARGUMENTS_SIZE = 1_000_000  # 1MB
