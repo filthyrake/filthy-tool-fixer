@@ -51,12 +51,16 @@ class ProfileLoader:
             tool_calling=ToolCallingConfig(
                 system_suffix=tc_data.get("system_suffix", ""),
                 temperature_override=tc_data.get("temperature_override", 0.0),
+                tool_choice_override=tc_data.get("tool_choice_override", ""),
                 strip_thinking=tc_data.get("strip_thinking", False),
                 think_tag_pattern=tc_data.get("think_tag_pattern", "<think>.*?</think>"),
                 keep_alive=tc_data.get("keep_alive", "5m"),
                 condense_tools=tc_data.get("condense_tools", False),
                 condense_system_prompt=tc_data.get("condense_system_prompt", False),
                 max_system_tokens=tc_data.get("max_system_tokens", 0),
+                exclude_tools=tc_data.get("exclude_tools", []),
+                num_ctx=tc_data.get("num_ctx", 0),
+                accept_text_after_tool_use=tc_data.get("accept_text_after_tool_use", False),
             ),
             escalation=EscalationConfig(
                 enabled=esc_data.get("enabled", False),

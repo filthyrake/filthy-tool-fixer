@@ -26,7 +26,10 @@ Filthy Tool Fixer Proxy (:8079)
     │                          │
     ▼                          ▼
 Ollama :11434              Ollama :11435
-qwen3:30b-a3b (GPU)       qwen3:235b-a22b (hybrid)
+(fast tier, GPU)           (quality tier, hybrid)
+qwen3:30b-a3b              qwen3:235b-a22b
+llama4:scout               llama4:maverick
+llama3.3:70b
 ```
 
 Non-tool requests are pure streaming passthrough. Tool-calling requests are buffered for validation.
@@ -160,6 +163,10 @@ TOML files in `profiles/` configure per-model behavior. Models are matched by `f
 | `condense_tools` | `false` | Strip verbose examples/notes from tool descriptions |
 | `condense_system_prompt` | `false` | Strip verbose sections from client system prompts |
 | `max_system_tokens` | `0` | Hard cap on system prompt size (0 = no limit, ~4 chars/token) |
+| `tool_choice_override` | `""` | Override `tool_choice` sent to backend (e.g. `"required"` to force tool use) |
+| `exclude_tools` | `[]` | Tool names to strip from request before sending to model |
+| `num_ctx` | `0` | Override Ollama context window size (0 = use model default) |
+| `accept_text_after_tool_use` | `false` | Accept text-only responses when conversation already has tool results (prevents infinite tool-calling loops with models that narrate) |
 
 **`[escalation]`** — Model escalation on failure:
 
@@ -312,10 +319,40 @@ opencode -m filthy-tool-fixer/qwen3:30b-a3b
 opencode -m filthy-tool-fixer/qwen3:235b-a22b
 ```
 
+## Tested models
+
+Every model has its own personality when it comes to tool calling. Here's what we've found.
+
+### Qwen3 30B-A3B (MoE, 3B active)
+
+The workhorse. Fast, reliable, and takes direction well. Runs fully on GPU (~10-18s per tool call). Needs `strip_thinking = true` to clean up its internal monologue, and benefits heavily from system prompt nudging — without it, Qwen will happily describe what it *would* do instead of doing it. When it gets stuck (wrong tool name, hallucinated parameters), it responds well to error feedback and usually self-corrects within 2-3 retries. Escalates to the 235B when all else fails. Best bang-for-buck model for everyday coding tasks.
+
+**Quirks**: Wraps reasoning in `<think>` tags. Occasionally hallucinates tool parameters that sound plausible but don't exist in the schema. Responds well to structured "CRITICAL RULES" system prompts.
+
+### Qwen3 235B-A22B (MoE, 22B active)
+
+The big gun. Runs hybrid CPU/GPU (~2-5 min per tool call depending on context), so you don't want it as your daily driver — but when the 30B can't figure it out, the 235B almost always can. Rarely needs retries (max_retries=1). Used primarily as the escalation target for the 30B.
+
+**Quirks**: Same `<think>` tag habit as its smaller sibling. Surprisingly good at recovering from the 30B's mistakes when given the same context — it seems to understand what went wrong and corrects course.
+
+### Llama 4 Maverick (400B MoE, 17B active)
+
+The storyteller. Maverick *really* wants to explain itself. It will write a paragraph about what it's going to do, then tack a JSON tool call blob onto the end of its text response. The proxy's embedded rescue feature (`_rescue_embedded_tool_calls`) was built specifically for this model — it extracts the tool call from the text, preserves the narration as visible output, and executes the tool separately. Needs `accept_text_after_tool_use = true` or it will loop forever making tool calls without ever giving a final answer.
+
+**Quirks**: Mixes text and tool calls in the same response. Occasionally sends empty arguments (`{}`) on the first try, then fixes them after validation feedback. Will search for `requirements.txt` three times before trying `pyproject.toml`. Charming but scatterbrained.
+
+### Llama 4 Scout (109B MoE, 17B active) — *not working*
+
+Does not produce usable tool calls even with aggressive proxy workarounds (`tool_choice_override = "required"`, `exclude_tools`, simplified system prompt, reduced `num_ctx`). Profile exists for experimentation but Scout is not recommended for tool-calling workloads. Use Maverick instead.
+
+### Llama 3.3 70B (Dense) — *untested*
+
+Profile exists but hasn't been validated yet. Configuration assumes it behaves similarly to the Llama 4 family (system prompt nudging, `accept_text_after_tool_use`, escalation to Maverick). If you test it, let us know how it goes.
+
 ## Development
 
 ```bash
-# Run tests (Mac, no server needed — 55 tests)
+# Run tests (Mac, no server needed — 71 tests)
 source .venv/bin/activate
 pytest tests/ -v
 

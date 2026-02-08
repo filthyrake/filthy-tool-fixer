@@ -1,0 +1,23 @@
+# Llama 4 Scout — 109B MoE (17B active), fast tier
+
+[model]
+pattern = "llama4:scout*"
+max_retries = 3
+request_timeout = 300.0
+backend_timeout = 120.0
+
+[tool_calling]
+system_suffix = "You MUST respond with a tool call, not text. TOOL GUIDE:\n- read: View file contents. Args: {\"filePath\": \"/absolute/path\"}\n- glob: Find files by name pattern. Args: {\"pattern\": \"**/*.py\"} or {\"pattern\": \"*.toml\", \"path\": \"/dir\"}\n- grep: Search file contents. Args: {\"pattern\": \"search term\"}\n- bash: Run shell commands. Args: {\"command\": \"ls -la\"}\n- edit: Modify files. Args: {\"filePath\": \"...\", \"oldString\": \"...\", \"newString\": \"...\"}\n- write: Create files. Args: {\"filePath\": \"...\", \"content\": \"...\"}\nSTART by reading project files (pyproject.toml, package.json, README) to understand the project. Never describe what you would do — call the tool directly."
+temperature_override = 0.0
+tool_choice_override = "required"
+strip_thinking = false
+keep_alive = "30m"
+condense_tools = true
+condense_system_prompt = true
+max_system_tokens = 800
+exclude_tools = ["question", "task", "skill", "todowrite", "todoread", "webfetch"]
+num_ctx = 16384
+accept_text_after_tool_use = true
+
+[escalation]
+enabled = false

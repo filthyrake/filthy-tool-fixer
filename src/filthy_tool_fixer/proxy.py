@@ -19,7 +19,6 @@ from filthy_tool_fixer.models import (
 )
 from filthy_tool_fixer.profiles.types import ModelProfile
 from filthy_tool_fixer.retry.loop import RetryLoop
-from filthy_tool_fixer.validation.schema import validate_tool_calls, ValidationResult
 
 log = get_logger(__name__)
 
@@ -201,9 +200,31 @@ class ProxyOrchestrator:
 
         updates: dict = {"messages": messages, "temperature": temperature}
 
+        # Override tool_choice if profile specifies it
+        if self._has_tools(request) and tc.tool_choice_override:
+            updates["tool_choice"] = tc.tool_choice_override
+
+        # Set Ollama context window size if configured (merge with existing options)
+        if self._has_tools(request) and tc.num_ctx > 0:
+            existing_options = getattr(request, "options", None) or {}
+            updates["options"] = {**existing_options, "num_ctx": tc.num_ctx}
+
+        # Exclude tools the model can't handle well
+        effective_tools = request.tools
+        if self._has_tools(request) and tc.exclude_tools and request.tools:
+            excluded = set(tc.exclude_tools)
+            effective_tools = [t for t in request.tools if t.function.name not in excluded]
+            if len(effective_tools) < len(request.tools):
+                log.debug(
+                    "tools_excluded",
+                    excluded=tc.exclude_tools,
+                    remaining=[t.function.name for t in effective_tools],
+                )
+            updates["tools"] = effective_tools
+
         # Condense verbose tool descriptions to reduce context size
-        if self._has_tools(request) and tc.condense_tools and request.tools:
-            updates["tools"] = _condense_tools(request.tools)
+        if self._has_tools(request) and tc.condense_tools and effective_tools:
+            updates["tools"] = _condense_tools(effective_tools)
 
         return request.model_copy(update=updates)
 
@@ -228,7 +249,7 @@ class ProxyOrchestrator:
         enhanced = self._enhance_request(request, profile)
         backend = self._select_backend(profile)
 
-        if not self._has_tools(request):
+        if not self._has_tools(enhanced):
             # No tools — pure passthrough (streaming or non-streaming)
             if request.stream:
                 return backend.chat_completion_stream(
@@ -268,7 +289,7 @@ class ProxyOrchestrator:
 
         response, extra_headers = await retry_loop.execute(
             request=enhanced,
-            tools=original.tools or [],
+            tools=enhanced.tools or [],
             budget_remaining=budget,
             start_time=start,
         )
