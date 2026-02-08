@@ -27,6 +27,7 @@ Filthy Tool Fixer Proxy (:8079)
     ▼                          ▼
 Ollama :11434              Ollama :11435
 (fast tier, GPU)           (quality tier, hybrid)
+qwen3-coder:30b            qwen3-coder:480b
 qwen3:30b-a3b              qwen3:235b-a22b
 llama4:scout               llama4:maverick
 llama3.3:70b
@@ -287,6 +288,18 @@ Create an `opencode.json` in your project root pointing at the proxy:
     }
   },
   "models": {
+    "filthy-tool-fixer/qwen3-coder:30b": {
+      "provider": "filthy-tool-fixer",
+      "model": "qwen3-coder:30b",
+      "maxTokens": 16384,
+      "contextWindow": 65536
+    },
+    "filthy-tool-fixer/qwen3-coder:480b": {
+      "provider": "filthy-tool-fixer",
+      "model": "qwen3-coder:480b",
+      "maxTokens": 16384,
+      "contextWindow": 65536
+    },
     "filthy-tool-fixer/qwen3:30b-a3b": {
       "provider": "filthy-tool-fixer",
       "model": "qwen3:30b-a3b",
@@ -301,7 +314,7 @@ Create an `opencode.json` in your project root pointing at the proxy:
     }
   },
   "agent": {
-    "model": "filthy-tool-fixer/qwen3:30b-a3b"
+    "model": "filthy-tool-fixer/qwen3-coder:30b"
   }
 }
 ```
@@ -312,10 +325,13 @@ Then add credentials and run:
 # Add to ~/.local/share/opencode/auth.json:
 # "filthy-tool-fixer": {"type": "api", "key": "not-needed"}
 
-# Run with 30B (fast, ~10-18s per tool call)
+# Run with Qwen3-Coder 30B (recommended, ~1-15s per tool call)
+opencode -m filthy-tool-fixer/qwen3-coder:30b
+
+# Run with Qwen3 30B (fast, ~10-18s per tool call)
 opencode -m filthy-tool-fixer/qwen3:30b-a3b
 
-# Run with 235B (quality, ~2-5 min per tool call)
+# Run with Qwen3 235B (quality, ~2-5 min per tool call)
 opencode -m filthy-tool-fixer/qwen3:235b-a22b
 ```
 
@@ -334,6 +350,20 @@ The workhorse. Fast, reliable, and takes direction well. Runs fully on GPU (~10-
 The big gun. Runs hybrid CPU/GPU (~2-5 min per tool call depending on context), so you don't want it as your daily driver — but when the 30B can't figure it out, the 235B almost always can. Rarely needs retries (max_retries=1). Used primarily as the escalation target for the 30B.
 
 **Quirks**: Same `<think>` tag habit as its smaller sibling. Surprisingly good at recovering from the 30B's mistakes when given the same context — it seems to understand what went wrong and corrects course.
+
+### Qwen3-Coder 30B-A3B (MoE, 3.3B active)
+
+The star of the show. Same MoE architecture as regular Qwen3 30B but purpose-built for code and agentic tool use. Runs fully on GPU (~1-15s per tool call). Does **not** use `<think>` tags — no stripping needed. Produces clean, native tool calls on the first attempt most of the time. When the conversation gets deep (10+ tool rounds), it occasionally responds with text first, but the system prompt nudge corrects it immediately on the second attempt. Zero validation failures, zero escalations needed in testing. 256K native context window.
+
+In testing: 25+ consecutive requests at 100% success rate, 50 messages deep, sub-second responses on follow-up calls. This is the model to beat.
+
+**Quirks**: Occasionally wants to narrate mid-conversation (just like regular Qwen3), but self-corrects after a single nudge. Without `accept_text_after_tool_use = true`, it will loop forever making tool calls instead of giving a final answer — a coding model that literally can't stop coding. No `<think>` tags, no embedded JSON blobs, no hallucinated parameters. Just clean tool calls. Escalates to the 480B if needed but hasn't needed to yet.
+
+### Qwen3-Coder 480B-A35B (MoE, 35B active) — *limited validation*
+
+The 480B quality-tier coder model. 290GB, runs hybrid CPU/GPU on port 11435. 256K native context. Tool call accuracy is **perfect** — every completion validated first attempt with zero retries. The catch is speed: ~1-2 minutes per turn on short contexts, and longer conversations (8+ messages) can exceed the 900s timeout. This is a hardware limitation (290GB model on 377GB RAM with only 24GB VRAM), not a model quality issue. With more GPU memory this model would fly.
+
+**Quirks**: Same clean tool-calling behavior as the 30B — no `<think>` tags, no embedded JSON. Escalation is disabled since there's nothing bigger to escalate to. Best suited for short, high-stakes exchanges where quality matters more than speed.
 
 ### Llama 4 Maverick (400B MoE, 17B active)
 
@@ -365,5 +395,7 @@ ssh user@YOUR_SERVER_IP "cd ~ && tar xzf filthy-tool-fixer.tar.gz && rm filthy-t
 ## Hardware
 
 - **Server**: Intel Xeon Platinum 8160, NVIDIA A30 24GB, 377GB RAM
-- **30B model**: 18GB, runs fully on GPU (~10-18s per tool call with validation)
-- **235B model**: 142GB, runs hybrid CPU/GPU (~2-5 min per tool call depending on context size)
+- **Qwen3-Coder 30B**: 19GB, runs fully on GPU (~1-15s per tool call)
+- **Qwen3-Coder 480B**: 290GB, runs hybrid CPU/GPU (~1-2 min per turn, limited by RAM bandwidth)
+- **Qwen3 30B**: 18GB, runs fully on GPU (~10-18s per tool call with validation)
+- **Qwen3 235B**: 142GB, runs hybrid CPU/GPU (~2-5 min per tool call depending on context size)
