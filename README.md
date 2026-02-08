@@ -288,6 +288,18 @@ Create an `opencode.json` in your project root pointing at the proxy:
     }
   },
   "models": {
+    "filthy-tool-fixer/qwen3-coder:30b": {
+      "provider": "filthy-tool-fixer",
+      "model": "qwen3-coder:30b",
+      "maxTokens": 16384,
+      "contextWindow": 65536
+    },
+    "filthy-tool-fixer/qwen3-coder:480b": {
+      "provider": "filthy-tool-fixer",
+      "model": "qwen3-coder:480b",
+      "maxTokens": 16384,
+      "contextWindow": 65536
+    },
     "filthy-tool-fixer/qwen3:30b-a3b": {
       "provider": "filthy-tool-fixer",
       "model": "qwen3:30b-a3b",
@@ -302,7 +314,7 @@ Create an `opencode.json` in your project root pointing at the proxy:
     }
   },
   "agent": {
-    "model": "filthy-tool-fixer/qwen3:30b-a3b"
+    "model": "filthy-tool-fixer/qwen3-coder:30b"
   }
 }
 ```
@@ -313,10 +325,13 @@ Then add credentials and run:
 # Add to ~/.local/share/opencode/auth.json:
 # "filthy-tool-fixer": {"type": "api", "key": "not-needed"}
 
-# Run with 30B (fast, ~10-18s per tool call)
+# Run with Qwen3-Coder 30B (recommended, ~1-15s per tool call)
+opencode -m filthy-tool-fixer/qwen3-coder:30b
+
+# Run with Qwen3 30B (fast, ~10-18s per tool call)
 opencode -m filthy-tool-fixer/qwen3:30b-a3b
 
-# Run with 235B (quality, ~2-5 min per tool call)
+# Run with Qwen3 235B (quality, ~2-5 min per tool call)
 opencode -m filthy-tool-fixer/qwen3:235b-a22b
 ```
 
@@ -342,7 +357,7 @@ The star of the show. Same MoE architecture as regular Qwen3 30B but purpose-bui
 
 In testing: 25+ consecutive requests at 100% success rate, 50 messages deep, sub-second responses on follow-up calls. This is the model to beat.
 
-**Quirks**: Occasionally wants to narrate mid-conversation (just like regular Qwen3), but self-corrects after a single nudge. No `<think>` tags, no embedded JSON blobs, no hallucinated parameters. Just clean tool calls. Escalates to the 480B if needed but hasn't needed to yet.
+**Quirks**: Occasionally wants to narrate mid-conversation (just like regular Qwen3), but self-corrects after a single nudge. Without `accept_text_after_tool_use = true`, it will loop forever making tool calls instead of giving a final answer — a coding model that literally can't stop coding. No `<think>` tags, no embedded JSON blobs, no hallucinated parameters. Just clean tool calls. Escalates to the 480B if needed but hasn't needed to yet.
 
 ### Qwen3-Coder 480B-A35B (MoE, 35B active) — *untested*
 
@@ -378,5 +393,7 @@ ssh user@YOUR_SERVER_IP "cd ~ && tar xzf filthy-tool-fixer.tar.gz && rm filthy-t
 ## Hardware
 
 - **Server**: Intel Xeon Platinum 8160, NVIDIA A30 24GB, 377GB RAM
-- **30B model**: 18GB, runs fully on GPU (~10-18s per tool call with validation)
-- **235B model**: 142GB, runs hybrid CPU/GPU (~2-5 min per tool call depending on context size)
+- **Qwen3-Coder 30B**: 19GB, runs fully on GPU (~1-15s per tool call)
+- **Qwen3-Coder 480B**: 290GB, runs hybrid CPU/GPU (timing TBD — untested)
+- **Qwen3 30B**: 18GB, runs fully on GPU (~10-18s per tool call with validation)
+- **Qwen3 235B**: 142GB, runs hybrid CPU/GPU (~2-5 min per tool call depending on context size)
