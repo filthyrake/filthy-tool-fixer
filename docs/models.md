@@ -182,8 +182,6 @@ Fast (GPU)                     Quality (Hybrid CPU/GPU)
 qwen3-coder:30b          ->    qwen3-coder:480b
 qwen3:30b-a3b            ->    qwen3:235b-a22b
 gpt-oss:20b              ->    gpt-oss:120b
-llama4:scout             ->    llama4:maverick
-llama3.3:70b             ->    llama4:maverick
 ```
 
 Escalation adds an error summary from the failed attempt so the quality model understands what went wrong.
@@ -222,8 +220,3 @@ Escalation adds an error summary from the failed attempt so the quality model un
 
 5. **Watch the logs** for validation errors, rescues, and retries. Adjust the profile accordingly.
 
----
-
-## Model Research
-
-See [MODEL_RESEARCH.md](../MODEL_RESEARCH.md) in the project root for candidates being evaluated for future support, including Mistral Small 3.2, Devstral, DeepSeek V3.1, and Command-R.

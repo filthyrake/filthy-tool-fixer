@@ -170,8 +170,6 @@ Escalation chains:
 qwen3:30b       -> qwen3:235b
 qwen3-coder:30b -> qwen3-coder:480b
 gpt-oss:20b     -> gpt-oss:120b
-llama4:scout    -> llama4:maverick
-llama3.3:70b    -> llama4:maverick
 ```
 
 ### Backend Routing (`proxy.py`, `main.py`)

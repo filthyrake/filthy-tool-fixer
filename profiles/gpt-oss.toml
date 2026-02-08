@@ -5,7 +5,7 @@
 [model]
 pattern = "gpt-oss:*"
 max_retries = 3
-request_timeout = 120.0
+request_timeout = 360.0
 backend_timeout = 120.0
 
 [tool_calling]

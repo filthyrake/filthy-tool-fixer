@@ -15,10 +15,10 @@ Our setup: Intel Xeon Platinum 8160, NVIDIA A30 24GB, 377GB RAM.
 |-------|------|---------|-------|
 | Qwen3-Coder 30B | 19GB | GPU (A30) | 1-15s |
 | Qwen3 30B | 18GB | GPU (A30) | 10-18s |
-| GPT-OSS 20B | 12GB | GPU (A30) | TBD |
+| GPT-OSS 20B | 12GB | GPU (A30) | 1-4s |
 | Qwen3-Coder 480B | 290GB | Hybrid CPU/GPU | 1-2 min |
 | Qwen3 235B | 142GB | Hybrid CPU/GPU | 2-5 min |
-| GPT-OSS 120B | 65GB | Hybrid CPU/GPU | TBD |
+| GPT-OSS 120B | 65GB | Hybrid CPU/GPU | 39-56s |
 
 ## Ollama Setup
 
@@ -75,9 +75,12 @@ Ollama loads models into memory on first request, which adds cold-start latency.
 # Fast tier
 curl http://localhost:11434/api/generate -d '{"model":"qwen3-coder:30b","prompt":"","keep_alive":"30m"}'
 curl http://localhost:11434/api/generate -d '{"model":"qwen3:30b-a3b","prompt":"","keep_alive":"30m"}'
+curl http://localhost:11434/api/generate -d '{"model":"gpt-oss:20b","prompt":"","keep_alive":"30m"}'
 
 # Quality tier
+curl http://localhost:11435/api/generate -d '{"model":"qwen3-coder:480b","prompt":"","keep_alive":"30m"}'
 curl http://localhost:11435/api/generate -d '{"model":"qwen3:235b-a22b","prompt":"","keep_alive":"30m"}'
+curl http://localhost:11435/api/generate -d '{"model":"gpt-oss:120b","prompt":"","keep_alive":"30m"}'
 ```
 
 The `keep_alive` parameter controls how long the model stays loaded (default varies by Ollama version). Profiles set this per-model — most use `30m`.

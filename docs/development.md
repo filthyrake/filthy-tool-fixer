@@ -109,4 +109,4 @@ Core:
 
 Dev:
 - **pytest** + **pytest-asyncio** — Testing
-- **respx** — HTTP mocking for httpx
+- **pytest-httpx** — HTTP mocking for httpx
