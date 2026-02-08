@@ -341,11 +341,9 @@ The storyteller. Maverick *really* wants to explain itself. It will write a para
 
 **Quirks**: Mixes text and tool calls in the same response. Occasionally sends empty arguments (`{}`) on the first try, then fixes them after validation feedback. Will search for `requirements.txt` three times before trying `pyproject.toml`. Charming but scatterbrained.
 
-### Llama 4 Scout (109B MoE, 17B active)
+### Llama 4 Scout (109B MoE, 17B active) — *not working*
 
-The eager but confused intern. Scout wants to help but needs firm guardrails. Requires `tool_choice_override = "required"` to force it into actually calling tools instead of narrating, and works best with a simplified tool set (`exclude_tools` strips out complex tools it doesn't handle well). Reduced context window via `num_ctx = 16384` helps keep it focused. No escalation — if Scout can't do it, route to Maverick instead.
-
-**Quirks**: Will describe tool usage in perfect detail without ever calling the tool. Needs the tool guide baked into the system prompt with example argument shapes. Runs on the fast Ollama instance but don't expect miracles.
+Does not produce usable tool calls even with aggressive proxy workarounds (`tool_choice_override = "required"`, `exclude_tools`, simplified system prompt, reduced `num_ctx`). Profile exists for experimentation but Scout is not recommended for tool-calling workloads. Use Maverick instead.
 
 ### Llama 3.3 70B (Dense) — *untested*
 
