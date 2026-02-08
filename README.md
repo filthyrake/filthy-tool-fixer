@@ -361,7 +361,7 @@ In testing: 25+ consecutive requests at 100% success rate, 50 messages deep, sub
 
 ### Qwen3-Coder 480B-A35B (MoE, 35B active) — *limited validation*
 
-The 480B quality-tier coder model. 290GB, runs hybrid CPU/GPU on port 11435. 256K native context. Tool call accuracy is **perfect** — every completion validated first attempt with zero retries. The catch is speed: ~1-2 minutes per turn on short contexts, and longer conversations (8+ messages) can exceed the 900s timeout. This is a hardware limitation (301GB model on 377GB RAM with only 24GB VRAM), not a model quality issue. With more GPU memory this model would fly.
+The 480B quality-tier coder model. 290GB, runs hybrid CPU/GPU on port 11435. 256K native context. Tool call accuracy is **perfect** — every completion validated first attempt with zero retries. The catch is speed: ~1-2 minutes per turn on short contexts, and longer conversations (8+ messages) can exceed the 900s timeout. This is a hardware limitation (290GB model on 377GB RAM with only 24GB VRAM), not a model quality issue. With more GPU memory this model would fly.
 
 **Quirks**: Same clean tool-calling behavior as the 30B — no `<think>` tags, no embedded JSON. Escalation is disabled since there's nothing bigger to escalate to. Best suited for short, high-stakes exchanges where quality matters more than speed.
 
