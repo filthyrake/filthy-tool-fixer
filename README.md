@@ -1,6 +1,6 @@
 # Filthy Tool Fixer
 
-OpenAI-compatible proxy that makes local LLM tool calling actually work — through schema validation, retry with error feedback, model escalation, and context condensing.
+OpenAI-compatible proxy that makes local LLM tool calling actually work — through schema validation, retry with error feedback, model escalation, and context condensing.  This is *very much* a work in progress.
 
 ## Why
 
