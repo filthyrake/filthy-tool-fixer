@@ -19,10 +19,13 @@ class ToolCallingConfig:
     temperature_override: float | None = 0.0
     strip_thinking: bool = False
     think_tag_pattern: str = "<think>.*?</think>"  # Regex pattern for thinking tags
+    tool_choice_override: str = ""  # Override tool_choice sent to backend (e.g. "required")
     keep_alive: str = "5m"
     condense_tools: bool = False
     condense_system_prompt: bool = False
     max_system_tokens: int = 0  # 0 = no limit
+    exclude_tools: list[str] = field(default_factory=list)  # Remove these tools from backend requests
+    num_ctx: int = 0  # Override Ollama context window size (0 = use default)
 
 
 @dataclass

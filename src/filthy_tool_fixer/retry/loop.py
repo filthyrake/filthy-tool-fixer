@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+import uuid
+from difflib import get_close_matches
 from typing import Any
 
 from filthy_tool_fixer.backends.base import BackendAdapter
@@ -12,6 +15,8 @@ from filthy_tool_fixer.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
+    FunctionCall,
+    ToolCall,
     ToolDefinition,
 )
 from filthy_tool_fixer.profiles.types import ModelProfile
@@ -56,6 +61,7 @@ class RetryLoop:
         best_response: ChatCompletionResponse | None = None
         best_score = -1
         last_errors_key: str | None = None
+        ever_attempted_tools = False  # Track if model ever tried tool calls
 
         max_retries = self._profile.max_retries
 
@@ -81,22 +87,64 @@ class RetryLoop:
                 log.exception("backend_request_failed", attempt=attempt)
                 break
 
-            # Score and track best response
+            # Extract tool calls and validate
+            tool_calls = self._extract_tool_calls(response)
+
+            # Rescue tool calls narrated as JSON text in the content field
+            if not tool_calls:
+                rescued = self._rescue_tool_calls_from_text(response, tools)
+                if rescued:
+                    tool_calls = rescued
+                    # Patch the response so downstream sees proper tool_calls
+                    response.choices[0].message.tool_calls = rescued
+                    response.choices[0].message.content = ""
+                    response.choices[0].finish_reason = "tool_calls"
+                    log.info(
+                        "tool_calls_rescued_from_text",
+                        attempt=attempt,
+                        count=len(rescued),
+                        names=[tc.function.name for tc in rescued],
+                        args=[tc.function.arguments[:200] for tc in rescued],
+                    )
+
+            if tool_calls:
+                ever_attempted_tools = True
+                # Auto-repair near-miss parameter names before validation
+                self._repair_tool_calls(tool_calls, tools)
+
+            # Score AFTER rescue+repair so rescued responses rank correctly
             score = self._score_response(response, tools)
             if score > best_score:
                 best_score = score
                 best_response = response
 
-            # Extract tool calls and validate
-            tool_calls = self._extract_tool_calls(response)
             if not tool_calls:
                 finish = ""
                 if response.choices:
                     finish = response.choices[0].finish_reason or ""
 
-                # If tools are optional and model chose text on a retry,
-                # accept it — we already nudged once
-                if not must_call_tools and finish == "stop" and attempt > 0:
+                log.info(
+                    "no_tool_calls_in_response",
+                    attempt=attempt,
+                    finish_reason=finish,
+                    must_call_tools=must_call_tools,
+                )
+
+                # Keep nudging until retries exhausted — give the model
+                # every chance to engage with tools before falling through
+                # to escalation
+                if attempt < max_retries:
+                    buffered_request = self._append_narration_feedback(
+                        buffered_request, response, tools
+                    )
+                    continue
+
+                # All retries spent without a tool call. If tools are
+                # optional AND the model never even attempted tools, accept
+                # text (it may genuinely not need tools). But if the model
+                # tried tools at any point, it clearly needed them — fall
+                # through to escalation instead.
+                if not must_call_tools and finish == "stop" and not ever_attempted_tools:
                     log.info(
                         "text_response_passthrough",
                         attempt=attempt,
@@ -105,22 +153,18 @@ class RetryLoop:
                     extra_headers["X-FilthyToolFixer-Attempts"] = str(attempt + 1)
                     return response, extra_headers
 
-                log.info(
-                    "no_tool_calls_in_response",
-                    attempt=attempt,
-                    finish_reason=finish,
-                    must_call_tools=must_call_tools,
-                )
-                # Nudge the model once to use tools, then accept text
-                if attempt < max_retries:
-                    buffered_request = self._append_narration_feedback(
-                        buffered_request, response
-                    )
-                    continue
                 break
 
             result = validate_tool_calls(tool_calls, tools)
             if result.valid:
+                # Check for semantic misuse (e.g., glob without wildcards)
+                semantic = self._check_semantic_issues(tool_calls)
+                if semantic and attempt < max_retries:
+                    log.info("semantic_issue", attempt=attempt, feedback=semantic)
+                    buffered_request = self._append_semantic_feedback(
+                        buffered_request, response, semantic
+                    )
+                    continue
                 log.info("tool_calls_valid", attempt=attempt)
                 extra_headers["X-FilthyToolFixer-Attempts"] = str(attempt + 1)
                 return response, extra_headers
@@ -137,7 +181,7 @@ class RetryLoop:
                 "validation_failed",
                 attempt=attempt,
                 error_count=len(result.errors),
-                worst=result.worst_error.message if result.worst_error else "",
+                errors=[e.message for e in result.errors[:5]],
             )
 
             if attempt < max_retries:
@@ -231,15 +275,33 @@ class RetryLoop:
             return None
 
         tool_calls = self._extract_tool_calls(response)
+
+        # Rescue tool calls from text in escalation too
+        if not tool_calls:
+            rescued = self._rescue_tool_calls_from_text(response, tools)
+            if rescued:
+                tool_calls = rescued
+                response.choices[0].message.tool_calls = rescued
+                response.choices[0].message.content = ""
+                response.choices[0].finish_reason = "tool_calls"
+                log.info("escalation_tool_calls_rescued", count=len(rescued))
+
         if not tool_calls:
             return None
+
+        # Auto-repair near-miss parameter names
+        self._repair_tool_calls(tool_calls, tools)
 
         result = validate_tool_calls(tool_calls, tools)
         if result.valid:
             log.info("escalation_succeeded")
             return response
 
-        log.info("escalation_also_failed", error_count=len(result.errors))
+        log.info(
+            "escalation_also_failed",
+            error_count=len(result.errors),
+            errors=[e.message for e in result.errors[:5]],
+        )
         return None
 
     def _build_escalation_summary(
@@ -274,6 +336,272 @@ class RetryLoop:
         if choice.message and choice.message.tool_calls:
             return choice.message.tool_calls
         return []
+
+    # Llama 3 native: <|python_start|>func(args)<|python_end|>
+    # Llama 4 native: <|python_tag|>func.call(args)<|eom_id|>
+    _LLAMA_TOOL_RE = re.compile(
+        r"<\|python_(?:start|tag)\|>\s*(\w+)(?:\.call)?\((.*?)\)\s*(?:<\|python_end\|>|<\|eom_id\|>)?",
+        re.DOTALL,
+    )
+
+    # Llama 4 pythonic: [func_name(param="val", param2=val2)]
+    # May contain multiple calls: [func1(a=1), func2(b=2)]
+    _PYTHONIC_TOOL_RE = re.compile(
+        r"\[(\w+)\((.*?)\)(?:,\s*(\w+)\((.*?)\))?\]",
+        re.DOTALL,
+    )
+
+    def _rescue_tool_calls_from_text(
+        self,
+        response: ChatCompletionResponse,
+        tools: list[ToolDefinition],
+    ) -> list[ToolCall] | None:
+        """Try to extract tool calls from text content.
+
+        Models sometimes emit tool calls in non-standard formats instead of
+        using the tool_calls response field. This detects common patterns:
+        - Llama native: <|python_start|>func(args)<|python_end|>
+        - JSON narration: {"name": "func", "parameters": {...}}
+        - Code-fenced JSON
+        """
+        if not response.choices or not response.choices[0].message:
+            return None
+        content = (response.choices[0].message.content or "").strip()
+        if not content:
+            return None
+
+        tool_names = {t.function.name for t in tools}
+
+        # Try Llama native format: <|python_start|>/<|python_tag|> tags
+        llama_matches = self._LLAMA_TOOL_RE.findall(content)
+        if llama_matches:
+            rescued = self._parse_llama_native_calls(llama_matches, tool_names)
+            if rescued:
+                log.debug("rescued_llama_native", count=len(rescued))
+                return rescued
+
+        # Try Llama 4 pythonic format: [func_name(param="val")]
+        pythonic_matches = self._PYTHONIC_TOOL_RE.findall(content)
+        if pythonic_matches:
+            rescued = self._parse_pythonic_calls(pythonic_matches, tool_names)
+            if rescued:
+                log.debug("rescued_pythonic", count=len(rescued))
+                return rescued
+
+        # Try JSON narration (plain or code-fenced)
+        json_str = content
+        fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", content, re.DOTALL)
+        if fence_match:
+            json_str = fence_match.group(1).strip()
+
+        try:
+            data = json.loads(json_str)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+        candidates = data if isinstance(data, list) else [data]
+
+        rescued: list[ToolCall] = []
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            tc = self._parse_narrated_tool_call(item, tool_names)
+            if tc:
+                rescued.append(tc)
+
+        return rescued if rescued else None
+
+    def _parse_llama_native_calls(
+        self,
+        matches: list[tuple[str, str]],
+        tool_names: set[str],
+    ) -> list[ToolCall] | None:
+        """Parse Llama-style function calls: func_name(key="val", key2=val2)."""
+        import ast
+
+        rescued: list[ToolCall] = []
+        for func_name, args_str in matches:
+            if func_name not in tool_names:
+                continue
+
+            # Parse the keyword arguments using ast.literal_eval on a dict
+            args = self._parse_python_kwargs(args_str)
+            if args is None:
+                continue
+
+            call_id = f"call_{uuid.uuid4().hex[:8]}"
+            rescued.append(ToolCall(
+                id=call_id,
+                type="function",
+                function=FunctionCall(name=func_name, arguments=json.dumps(args)),
+            ))
+
+        return rescued if rescued else None
+
+    def _parse_pythonic_calls(
+        self,
+        matches: list[tuple[str, ...]],
+        tool_names: set[str],
+    ) -> list[ToolCall] | None:
+        """Parse Llama 4 pythonic format: [func_name(param="val", param2=val2)].
+
+        The regex captures groups: (name1, args1, name2, args2) where name2/args2
+        are empty if there's only one call.
+        """
+        rescued: list[ToolCall] = []
+        for match in matches:
+            # Process pairs: (name, args) — up to 2 per regex match
+            for i in range(0, len(match), 2):
+                func_name = match[i]
+                args_str = match[i + 1] if i + 1 < len(match) else ""
+                if not func_name or func_name not in tool_names:
+                    continue
+
+                args = self._parse_python_kwargs(args_str)
+                if args is None:
+                    continue
+
+                call_id = f"call_{uuid.uuid4().hex[:8]}"
+                rescued.append(ToolCall(
+                    id=call_id,
+                    type="function",
+                    function=FunctionCall(name=func_name, arguments=json.dumps(args)),
+                ))
+
+        return rescued if rescued else None
+
+    def _parse_python_kwargs(self, args_str: str) -> dict | None:
+        """Parse Python-style keyword arguments into a dict.
+
+        Handles: key="value", key=123, key=True, key=[1,2,3]
+        """
+        import ast
+
+        args_str = args_str.strip()
+        if not args_str:
+            return {}
+
+        # Wrap in dict() call syntax for ast parsing: dict(key="val") → {"key": "val"}
+        try:
+            tree = ast.parse(f"dict({args_str})", mode="eval")
+            # Extract keyword arguments from the Call node
+            call_node = tree.body
+            if not isinstance(call_node, ast.Call):
+                return None
+
+            result = {}
+            for kw in call_node.keywords:
+                if kw.arg is None:
+                    continue
+                result[kw.arg] = ast.literal_eval(kw.value)
+            return result
+        except (SyntaxError, ValueError):
+            return None
+
+    def _parse_narrated_tool_call(
+        self, item: dict, tool_names: set[str]
+    ) -> ToolCall | None:
+        """Parse a single narrated tool call dict into a ToolCall.
+
+        Handles common patterns:
+          {"name": "...", "arguments": {...}}
+          {"name": "...", "parameters": {...}}
+          {"type": "function", "name": "...", "parameters": {...}}
+          {"function": {"name": "...", "arguments": {...}}}
+        """
+        name = None
+        args = None
+
+        # Pattern: {"function": {"name": ..., "arguments": ...}}
+        if "function" in item and isinstance(item["function"], dict):
+            inner = item["function"]
+            name = inner.get("name")
+            args = inner.get("arguments") or inner.get("parameters")
+        else:
+            # Pattern: {"name": ..., "arguments"|"parameters": ...}
+            name = item.get("name")
+            args = item.get("arguments") or item.get("parameters")
+
+        if not name or name not in tool_names:
+            return None
+
+        # Serialize args to JSON string if they're a dict/list
+        if isinstance(args, (dict, list)):
+            args_str = json.dumps(args)
+        elif isinstance(args, str):
+            args_str = args
+        else:
+            args_str = "{}"
+
+        call_id = f"call_{uuid.uuid4().hex[:8]}"
+        return ToolCall(
+            id=call_id,
+            type="function",
+            function=FunctionCall(name=name, arguments=args_str),
+        )
+
+    def _repair_tool_calls(
+        self,
+        tool_calls: list[ToolCall],
+        tools: list[ToolDefinition],
+    ) -> bool:
+        """Auto-repair near-miss parameter names in tool calls.
+
+        Models often get parameter names almost-right (e.g. 'question' instead
+        of 'questions'). This fuzzy-matches and corrects them in-place.
+        Returns True if any repairs were made.
+        """
+        tool_map = {t.function.name: t for t in tools}
+        repaired = False
+        log.info("repair_starting", call_count=len(tool_calls), tool_names=[tc.function.name for tc in tool_calls])
+
+        for tc in tool_calls:
+            tool_def = tool_map.get(tc.function.name)
+            if not tool_def or not tool_def.function.parameters:
+                continue
+
+            schema = tool_def.function.parameters
+            properties = schema.get("properties", {})
+            if not properties:
+                continue
+
+            try:
+                args = json.loads(tc.function.arguments)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            if not isinstance(args, dict):
+                log.info("repair_skip_non_dict", tool=tc.function.name, args_type=type(args).__name__)
+                continue
+
+            valid_names = list(properties.keys())
+            new_args = {}
+            changed = False
+            log.info("repair_checking", tool=tc.function.name, arg_keys=list(args.keys()), valid=valid_names)
+
+            for key, value in args.items():
+                if key in properties:
+                    new_args[key] = value
+                else:
+                    # Fuzzy match against valid parameter names
+                    matches = get_close_matches(key, valid_names, n=1, cutoff=0.8)
+                    if matches:
+                        new_args[matches[0]] = value
+                        changed = True
+                        log.info(
+                            "param_name_repaired",
+                            tool=tc.function.name,
+                            original=key,
+                            corrected=matches[0],
+                        )
+                    else:
+                        new_args[key] = value  # Keep as-is, validation will catch it
+
+            if changed:
+                tc.function.arguments = json.dumps(new_args)
+                repaired = True
+
+        return repaired
 
     def _score_response(
         self, response: ChatCompletionResponse, tools: list[ToolDefinition]
@@ -333,6 +661,7 @@ class RetryLoop:
         self,
         request: ChatCompletionRequest,
         response: ChatCompletionResponse,
+        tools: list[ToolDefinition] | None = None,
     ) -> ChatCompletionRequest:
         """Feedback for when the model narrates instead of calling tools."""
         messages = list(request.messages)
@@ -340,14 +669,70 @@ class RetryLoop:
         if response.choices and response.choices[0].message:
             messages.append(response.choices[0].message)
 
+        # Use tools from the request (which may be filtered) for guidance
+        tool_list = request.tools or tools or []
+        names = [t.function.name for t in tool_list]
+
+        # Build actionable guidance with tool-specific hints
+        hints = []
+        if "read" in names:
+            hints.append("'read' to view file contents")
+        if "glob" in names:
+            hints.append("'glob' to find files by pattern")
+        if "grep" in names:
+            hints.append("'grep' to search file contents")
+        if "bash" in names:
+            hints.append("'bash' to run commands")
+
+        hint_text = ""
+        if hints:
+            hint_text = " Use " + ", ".join(hints) + "."
+
         messages.append(
             ChatMessage(
                 role="user",
                 content=(
-                    "You described what you would do instead of actually calling the tool. "
-                    "Please respond with the actual tool call, not a description of it."
+                    "You MUST call a tool. Do NOT respond with text."
+                    f"{hint_text}"
+                    f" Available tools: {', '.join(names)}."
+                    " Pick the most appropriate tool and call it now."
                 ),
             )
         )
 
+        return request.model_copy(update={"messages": messages})
+
+    def _check_semantic_issues(self, tool_calls: list[ToolCall]) -> str | None:
+        """Check for common semantic misuse patterns in valid tool calls.
+
+        Returns a feedback string if issues found, None if OK.
+        """
+        for tc in tool_calls:
+            if tc.function.name == "glob":
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                pattern = args.get("pattern", "")
+                if isinstance(pattern, str) and not any(c in pattern for c in "*?["):
+                    return (
+                        f"WRONG. glob finds files by NAME pattern — it needs wildcards "
+                        f"(*, **, ?). '{pattern}' has none. "
+                        "To search file CONTENTS, use grep with pattern='{term}'. "
+                        "To list all files, use glob with pattern='*'. "
+                        "To read a specific file, use read with file_path='/path/to/file'."
+                    )
+        return None
+
+    def _append_semantic_feedback(
+        self,
+        request: ChatCompletionRequest,
+        response: ChatCompletionResponse,
+        feedback: str,
+    ) -> ChatCompletionRequest:
+        """Append semantic issue feedback to guide the model toward correct tool use."""
+        messages = list(request.messages)
+        if response.choices and response.choices[0].message:
+            messages.append(response.choices[0].message)
+        messages.append(ChatMessage(role="user", content=feedback))
         return request.model_copy(update={"messages": messages})

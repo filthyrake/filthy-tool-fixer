@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from filthy_tool_fixer.models import ChatMessage, ToolDefinition
+from filthy_tool_fixer.models import ChatMessage, FunctionDefinition, ToolDefinition
 from filthy_tool_fixer.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
 from filthy_tool_fixer.retry.feedback import build_feedback_message
 from filthy_tool_fixer.retry.loop import RetryLoop
@@ -116,10 +116,13 @@ class TestRetryLoop:
 
     @pytest.mark.asyncio
     async def test_text_response_nudge_then_passthrough(self, sample_tools, profile):
-        # Model responds with text twice — first gets nudged, second passes through
+        # Model responds with text on every attempt — retries all exhausted,
+        # then accepts text since tools are optional
         text1 = make_response(content="I would search for files...")
-        text2 = make_response(content="Here is the answer directly.")
-        backend = MockBackend([text1, text2])
+        text2 = make_response(content="Let me explain...")
+        text3 = make_response(content="Here is the answer directly.")
+        text4 = make_response(content="Final answer.")
+        backend = MockBackend([text1, text2, text3, text4])
         loop = RetryLoop(backend=backend, profile=profile)
 
         request = make_request(tools=sample_tools)  # tool_choice defaults to None (optional)
@@ -127,7 +130,8 @@ class TestRetryLoop:
             request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
         )
 
-        assert backend.call_count == 2  # One nudge, then accept text
+        # Should use all retries (max_retries=2 → 3 attempts) before accepting text
+        assert backend.call_count == 3
         assert response.choices[0].message.content == "Here is the answer directly."
 
     @pytest.mark.asyncio
@@ -167,7 +171,7 @@ class TestRetryLoop:
         assert backend.call_count == 2
         # Check narration feedback was sent
         second_req = backend.requests[1]
-        assert any("described what you would do" in (m.content or "") for m in second_req.messages)
+        assert any("MUST call a tool" in (m.content or "") for m in second_req.messages)
 
     @pytest.mark.asyncio
     async def test_duplicate_detection_breaks_loop(self, sample_tools, profile):
@@ -202,6 +206,112 @@ class TestRetryLoop:
 
         assert backend.call_count == 3  # initial + 2 retries
         assert headers.get("X-FilthyToolFixer-Degraded") == "true"
+
+
+class TestToolCallRescue:
+    @pytest.fixture
+    def profile(self):
+        return ModelProfile(
+            max_retries=2,
+            request_timeout=45.0,
+            backend_timeout=120.0,
+            tool_calling=ToolCallingConfig(),
+            escalation=EscalationConfig(enabled=False),
+        )
+
+    @pytest.mark.asyncio
+    async def test_rescue_narrated_tool_call(self, sample_tools, profile):
+        # Model narrates a tool call as JSON text — should be rescued
+        narrated = make_response(
+            content='{"type": "function", "name": "search_files", "parameters": {"query": "test"}}'
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Should rescue the tool call and validate it successfully
+        assert backend.call_count == 1
+        assert response.choices[0].message.tool_calls is not None
+        assert response.choices[0].message.tool_calls[0].function.name == "search_files"
+
+    @pytest.mark.asyncio
+    async def test_rescue_with_code_fence(self, sample_tools, profile):
+        narrated = make_response(
+            content='```json\n{"name": "search_files", "arguments": {"query": "hello"}}\n```'
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        assert backend.call_count == 1
+        assert response.choices[0].message.tool_calls[0].function.name == "search_files"
+
+    @pytest.mark.asyncio
+    async def test_rescue_invalid_still_retries(self, sample_tools, profile):
+        # Narrated tool call with wrong name — rescued but fails validation, triggers retry
+        narrated = make_response(
+            content='{"name": "nonexistent_tool", "parameters": {"x": 1}}'
+        )
+        good = make_response(
+            tool_calls=[make_tool_call("search_files", {"query": "test"})]
+        )
+        backend = MockBackend([narrated, good])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Narrated call had unknown tool name — not rescued (name not in tool set)
+        # So it falls through to narration nudge, then second attempt succeeds
+        assert backend.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_rescue_llama_native_format(self, sample_tools, profile):
+        # Llama models emit tool calls as <|python_start|>func(args)<|python_end|>
+        narrated = make_response(
+            content='<|python_start|>search_files(query="test files")<|python_end|>'
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        assert backend.call_count == 1
+        tc = response.choices[0].message.tool_calls[0]
+        assert tc.function.name == "search_files"
+        assert '"query"' in tc.function.arguments
+        assert "test files" in tc.function.arguments
+
+    @pytest.mark.asyncio
+    async def test_no_rescue_for_plain_text(self, sample_tools, profile):
+        # Regular text response — should NOT be rescued
+        text1 = make_response(content="I can help you with that!")
+        text2 = make_response(content="Sure, let me explain.")
+        text3 = make_response(content="Here's your answer.")
+        backend = MockBackend([text1, text2, text3])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # No rescue possible — should exhaust retries then passthrough
+        assert backend.call_count == 3
+        assert response.choices[0].message.tool_calls is None
 
 
 class TestEscalation:
@@ -328,3 +438,120 @@ class TestBestAttemptScoring:
 
         # Should return the better response (with tool calls)
         assert response.choices[0].message.tool_calls is not None
+
+
+class TestParamNameRepair:
+    """Test auto-repair of near-miss parameter names."""
+
+    @pytest.fixture
+    def question_tool(self):
+        """A tool with a plural param name — mimics opencode's question tool."""
+        return ToolDefinition(
+            type="function",
+            function=FunctionDefinition(
+                name="question",
+                description="Ask the user a question",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "description": "List of questions",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["questions"],
+                },
+            ),
+        )
+
+    @pytest.fixture
+    def tools_with_question(self, sample_tools, question_tool):
+        return sample_tools + [question_tool]
+
+    @pytest.fixture
+    def profile(self):
+        return ModelProfile(
+            max_retries=2,
+            request_timeout=45.0,
+            backend_timeout=120.0,
+            tool_calling=ToolCallingConfig(),
+            escalation=EscalationConfig(enabled=False),
+        )
+
+    @pytest.mark.asyncio
+    async def test_repair_singular_to_plural(self, tools_with_question, profile):
+        """'question' param should be repaired to 'questions'."""
+        # Model calls question tool with singular param name
+        response = make_response(
+            tool_calls=[make_tool_call("question", {"question": ["What stack?"]})]
+        )
+        backend = MockBackend([response])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=tools_with_question)
+        result, headers = await loop.execute(
+            request=request, tools=tools_with_question, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Should succeed on first attempt after auto-repair
+        assert backend.call_count == 1
+        assert "X-FilthyToolFixer-Degraded" not in headers
+
+    @pytest.mark.asyncio
+    async def test_no_repair_for_correct_params(self, tools_with_question, profile):
+        """Correct param names should not be touched."""
+        response = make_response(
+            tool_calls=[make_tool_call("question", {"questions": ["What stack?"]})]
+        )
+        backend = MockBackend([response])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=tools_with_question)
+        result, headers = await loop.execute(
+            request=request, tools=tools_with_question, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        assert backend.call_count == 1
+        assert "X-FilthyToolFixer-Degraded" not in headers
+
+    @pytest.mark.asyncio
+    async def test_no_repair_for_distant_names(self, tools_with_question, profile):
+        """Param names that are too different should not be repaired."""
+        response = make_response(
+            tool_calls=[make_tool_call("question", {"xyz_unrelated": ["What stack?"]})]
+        )
+        # Second attempt also bad
+        response2 = make_response(
+            tool_calls=[make_tool_call("question", {"xyz_unrelated": ["What stack?"]})]
+        )
+        backend = MockBackend([response, response2])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=tools_with_question)
+        result, headers = await loop.execute(
+            request=request, tools=tools_with_question, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Should fail — distant name not auto-repaired
+        assert headers.get("X-FilthyToolFixer-Degraded") == "true"
+
+    @pytest.mark.asyncio
+    async def test_repair_rescued_tool_call(self, tools_with_question, profile):
+        """Rescued tool calls should also get param names repaired."""
+        narrated = make_response(
+            content='{"name": "question", "parameters": {"question": ["What is the stack?"]}}'
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=tools_with_question)
+        result, headers = await loop.execute(
+            request=request, tools=tools_with_question, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Rescued from text + param name repaired = success on first attempt
+        assert backend.call_count == 1
+        tc = result.choices[0].message.tool_calls[0]
+        assert tc.function.name == "question"
+        assert '"questions"' in tc.function.arguments

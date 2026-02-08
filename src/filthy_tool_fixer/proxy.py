@@ -201,9 +201,30 @@ class ProxyOrchestrator:
 
         updates: dict = {"messages": messages, "temperature": temperature}
 
+        # Override tool_choice if profile specifies it
+        if self._has_tools(request) and tc.tool_choice_override:
+            updates["tool_choice"] = tc.tool_choice_override
+
+        # Set Ollama context window size if configured
+        if self._has_tools(request) and tc.num_ctx > 0:
+            updates["options"] = {"num_ctx": tc.num_ctx}
+
+        # Exclude tools the model can't handle well
+        effective_tools = request.tools
+        if self._has_tools(request) and tc.exclude_tools and request.tools:
+            excluded = set(tc.exclude_tools)
+            effective_tools = [t for t in request.tools if t.function.name not in excluded]
+            if len(effective_tools) < len(request.tools):
+                log.debug(
+                    "tools_excluded",
+                    excluded=tc.exclude_tools,
+                    remaining=[t.function.name for t in effective_tools],
+                )
+            updates["tools"] = effective_tools
+
         # Condense verbose tool descriptions to reduce context size
-        if self._has_tools(request) and tc.condense_tools and request.tools:
-            updates["tools"] = _condense_tools(request.tools)
+        if self._has_tools(request) and tc.condense_tools and effective_tools:
+            updates["tools"] = _condense_tools(effective_tools)
 
         return request.model_copy(update=updates)
 
