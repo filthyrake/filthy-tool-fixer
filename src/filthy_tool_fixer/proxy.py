@@ -19,7 +19,6 @@ from filthy_tool_fixer.models import (
 )
 from filthy_tool_fixer.profiles.types import ModelProfile
 from filthy_tool_fixer.retry.loop import RetryLoop
-from filthy_tool_fixer.validation.schema import validate_tool_calls, ValidationResult
 
 log = get_logger(__name__)
 
@@ -205,9 +204,10 @@ class ProxyOrchestrator:
         if self._has_tools(request) and tc.tool_choice_override:
             updates["tool_choice"] = tc.tool_choice_override
 
-        # Set Ollama context window size if configured
+        # Set Ollama context window size if configured (merge with existing options)
         if self._has_tools(request) and tc.num_ctx > 0:
-            updates["options"] = {"num_ctx": tc.num_ctx}
+            existing_options = getattr(request, "options", None) or {}
+            updates["options"] = {**existing_options, "num_ctx": tc.num_ctx}
 
         # Exclude tools the model can't handle well
         effective_tools = request.tools
@@ -289,7 +289,7 @@ class ProxyOrchestrator:
 
         response, extra_headers = await retry_loop.execute(
             request=enhanced,
-            tools=original.tools or [],
+            tools=enhanced.tools or [],
             budget_remaining=budget,
             start_time=start,
         )

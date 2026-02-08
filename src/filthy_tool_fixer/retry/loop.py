@@ -7,8 +7,6 @@ import re
 import time
 import uuid
 from difflib import get_close_matches
-from typing import Any
-
 from filthy_tool_fixer.backends.base import BackendAdapter
 from filthy_tool_fixer.logging import get_logger
 from filthy_tool_fixer.models import (
@@ -345,11 +343,9 @@ class RetryLoop:
     )
 
     # Llama 4 pythonic: [func_name(param="val", param2=val2)]
-    # May contain multiple calls: [func1(a=1), func2(b=2)]
-    _PYTHONIC_TOOL_RE = re.compile(
-        r"\[(\w+)\((.*?)\)(?:,\s*(\w+)\((.*?)\))?\]",
-        re.DOTALL,
-    )
+    # May contain multiple calls: [func1(a=1), func2(b=2), func3(c=3)]
+    _PYTHONIC_BRACKET_RE = re.compile(r"\[([^\]]+)\]", re.DOTALL)
+    _PYTHONIC_CALL_RE = re.compile(r"(\w+)\(([^)]*)\)", re.DOTALL)
 
     def _rescue_tool_calls_from_text(
         self,
@@ -381,8 +377,10 @@ class RetryLoop:
                 return rescued
 
         # Try Llama 4 pythonic format: [func_name(param="val")]
-        pythonic_matches = self._PYTHONIC_TOOL_RE.findall(content)
-        if pythonic_matches:
+        bracket_match = self._PYTHONIC_BRACKET_RE.search(content)
+        if bracket_match:
+            inner = bracket_match.group(1)
+            pythonic_matches = self._PYTHONIC_CALL_RE.findall(inner)
             rescued = self._parse_pythonic_calls(pythonic_matches, tool_names)
             if rescued:
                 log.debug("rescued_pythonic", count=len(rescued))
@@ -417,8 +415,6 @@ class RetryLoop:
         tool_names: set[str],
     ) -> list[ToolCall] | None:
         """Parse Llama-style function calls: func_name(key="val", key2=val2)."""
-        import ast
-
         rescued: list[ToolCall] = []
         for func_name, args_str in matches:
             if func_name not in tool_names:
@@ -429,7 +425,7 @@ class RetryLoop:
             if args is None:
                 continue
 
-            call_id = f"call_{uuid.uuid4().hex[:8]}"
+            call_id = f"call_{uuid.uuid4().hex[:12]}"
             rescued.append(ToolCall(
                 id=call_id,
                 type="function",
@@ -440,33 +436,29 @@ class RetryLoop:
 
     def _parse_pythonic_calls(
         self,
-        matches: list[tuple[str, ...]],
+        matches: list[tuple[str, str]],
         tool_names: set[str],
     ) -> list[ToolCall] | None:
         """Parse Llama 4 pythonic format: [func_name(param="val", param2=val2)].
 
-        The regex captures groups: (name1, args1, name2, args2) where name2/args2
-        are empty if there's only one call.
+        Each match is a (name, args_str) tuple from _PYTHONIC_CALL_RE.findall().
+        Handles any number of calls within brackets.
         """
         rescued: list[ToolCall] = []
-        for match in matches:
-            # Process pairs: (name, args) — up to 2 per regex match
-            for i in range(0, len(match), 2):
-                func_name = match[i]
-                args_str = match[i + 1] if i + 1 < len(match) else ""
-                if not func_name or func_name not in tool_names:
-                    continue
+        for func_name, args_str in matches:
+            if not func_name or func_name not in tool_names:
+                continue
 
-                args = self._parse_python_kwargs(args_str)
-                if args is None:
-                    continue
+            args = self._parse_python_kwargs(args_str)
+            if args is None:
+                continue
 
-                call_id = f"call_{uuid.uuid4().hex[:8]}"
-                rescued.append(ToolCall(
-                    id=call_id,
-                    type="function",
-                    function=FunctionCall(name=func_name, arguments=json.dumps(args)),
-                ))
+            call_id = f"call_{uuid.uuid4().hex[:12]}"
+            rescued.append(ToolCall(
+                id=call_id,
+                type="function",
+                function=FunctionCall(name=func_name, arguments=json.dumps(args)),
+            ))
 
         return rescued if rescued else None
 
@@ -495,7 +487,7 @@ class RetryLoop:
                     continue
                 result[kw.arg] = ast.literal_eval(kw.value)
             return result
-        except (SyntaxError, ValueError):
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
             return None
 
     def _parse_narrated_tool_call(
@@ -516,11 +508,15 @@ class RetryLoop:
         if "function" in item and isinstance(item["function"], dict):
             inner = item["function"]
             name = inner.get("name")
-            args = inner.get("arguments") or inner.get("parameters")
+            args = inner.get("arguments")
+            if args is None:
+                args = inner.get("parameters")
         else:
             # Pattern: {"name": ..., "arguments"|"parameters": ...}
             name = item.get("name")
-            args = item.get("arguments") or item.get("parameters")
+            args = item.get("arguments")
+            if args is None:
+                args = item.get("parameters")
 
         if not name or name not in tool_names:
             return None
@@ -533,7 +529,7 @@ class RetryLoop:
         else:
             args_str = "{}"
 
-        call_id = f"call_{uuid.uuid4().hex[:8]}"
+        call_id = f"call_{uuid.uuid4().hex[:12]}"
         return ToolCall(
             id=call_id,
             type="function",
@@ -553,7 +549,7 @@ class RetryLoop:
         """
         tool_map = {t.function.name: t for t in tools}
         repaired = False
-        log.info("repair_starting", call_count=len(tool_calls), tool_names=[tc.function.name for tc in tool_calls])
+        log.debug("repair_starting", call_count=len(tool_calls), tool_names=[tc.function.name for tc in tool_calls])
 
         for tc in tool_calls:
             tool_def = tool_map.get(tc.function.name)
@@ -571,13 +567,13 @@ class RetryLoop:
                 continue
 
             if not isinstance(args, dict):
-                log.info("repair_skip_non_dict", tool=tc.function.name, args_type=type(args).__name__)
+                log.debug("repair_skip_non_dict", tool=tc.function.name, args_type=type(args).__name__)
                 continue
 
             valid_names = list(properties.keys())
             new_args = {}
             changed = False
-            log.info("repair_checking", tool=tc.function.name, arg_keys=list(args.keys()), valid=valid_names)
+            log.debug("repair_checking", tool=tc.function.name, arg_keys=list(args.keys()), valid=valid_names)
 
             for key, value in args.items():
                 if key in properties:
@@ -718,7 +714,7 @@ class RetryLoop:
                     return (
                         f"WRONG. glob finds files by NAME pattern — it needs wildcards "
                         f"(*, **, ?). '{pattern}' has none. "
-                        "To search file CONTENTS, use grep with pattern='{term}'. "
+                        f"To search file CONTENTS, use grep with pattern='{pattern}'. "
                         "To list all files, use glob with pattern='*'. "
                         "To read a specific file, use read with file_path='/path/to/file'."
                     )

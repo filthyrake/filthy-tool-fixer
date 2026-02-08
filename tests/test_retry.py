@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from filthy_tool_fixer.models import ChatMessage, FunctionDefinition, ToolDefinition
+from filthy_tool_fixer.models import FunctionDefinition, ToolDefinition
 from filthy_tool_fixer.profiles.types import EscalationConfig, ModelProfile, ToolCallingConfig
 from filthy_tool_fixer.retry.feedback import build_feedback_message
 from filthy_tool_fixer.retry.loop import RetryLoop
@@ -294,6 +294,64 @@ class TestToolCallRescue:
         assert tc.function.name == "search_files"
         assert '"query"' in tc.function.arguments
         assert "test files" in tc.function.arguments
+
+    @pytest.mark.asyncio
+    async def test_rescue_pythonic_single_call(self, sample_tools, profile):
+        # Llama 4 pythonic format with one call
+        narrated = make_response(
+            content='[search_files(query="hello")]'
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        assert backend.call_count == 1
+        tc = response.choices[0].message.tool_calls[0]
+        assert tc.function.name == "search_files"
+        assert '"hello"' in tc.function.arguments
+
+    @pytest.mark.asyncio
+    async def test_rescue_pythonic_three_calls(self, sample_tools, profile):
+        # Llama 4 pythonic format with 3 calls — tests the regex handles N calls
+        narrated = make_response(
+            content='[search_files(query="a"), write_file(path="/tmp/x", content="y"), search_files(query="b")]'
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        assert backend.call_count == 1
+        tcs = response.choices[0].message.tool_calls
+        assert len(tcs) == 3
+        assert tcs[0].function.name == "search_files"
+        assert tcs[1].function.name == "write_file"
+        assert tcs[2].function.name == "search_files"
+
+    @pytest.mark.asyncio
+    async def test_rescue_narrated_empty_args(self, sample_tools, profile):
+        # Tool call with empty arguments dict — should not be clobbered by falsy check
+        narrated = make_response(
+            content='{"name": "search_files", "arguments": {}, "parameters": {"query": "wrong"}}'
+        )
+        backend = MockBackend([narrated])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Should use "arguments" (empty dict), not fall through to "parameters"
+        tc = response.choices[0].message.tool_calls[0]
+        assert tc.function.arguments == "{}"
 
     @pytest.mark.asyncio
     async def test_no_rescue_for_plain_text(self, sample_tools, profile):
