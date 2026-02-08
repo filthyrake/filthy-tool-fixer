@@ -121,12 +121,29 @@ class RetryLoop:
                 if response.choices:
                     finish = response.choices[0].finish_reason or ""
 
+                # If the conversation already has tool results, the model
+                # has been successfully using tools. A text response now
+                # is the synthesized answer — accept it immediately.
+                has_prior_tool_results = any(
+                    m.role == "tool" for m in request.messages
+                )
+
                 log.info(
                     "no_tool_calls_in_response",
                     attempt=attempt,
                     finish_reason=finish,
                     must_call_tools=must_call_tools,
+                    has_prior_tool_results=has_prior_tool_results,
                 )
+
+                if has_prior_tool_results and not must_call_tools and finish == "stop":
+                    log.info(
+                        "text_response_accepted",
+                        attempt=attempt,
+                        reason="prior_tool_results_in_conversation",
+                    )
+                    extra_headers["X-FilthyToolFixer-Attempts"] = str(attempt + 1)
+                    return response, extra_headers
 
                 # Keep nudging until retries exhausted — give the model
                 # every chance to engage with tools before falling through

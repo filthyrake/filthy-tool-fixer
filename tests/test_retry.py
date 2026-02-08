@@ -135,6 +135,50 @@ class TestRetryLoop:
         assert response.choices[0].message.content == "Here is the answer directly."
 
     @pytest.mark.asyncio
+    async def test_text_accepted_when_prior_tool_results(self, sample_tools, profile):
+        # If conversation already has tool results (model has been using tools),
+        # a text response is the synthesized answer — accept immediately
+        text_answer = make_response(content="Based on my analysis, the project uses FastAPI.")
+        backend = MockBackend([text_answer])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        # Simulate a conversation with prior tool use
+        from filthy_tool_fixer.models import ChatMessage
+        messages = [
+            ChatMessage(role="user", content="What framework does this project use?"),
+            ChatMessage(role="assistant", content="", tool_calls=[
+                make_tool_call("read", {"file_path": "pyproject.toml"})
+            ]),
+            ChatMessage(role="tool", content="[tool result: dependencies include fastapi]"),
+        ]
+        request = make_request(tools=sample_tools, messages=messages)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Should accept text on first attempt — no nudging
+        assert backend.call_count == 1
+        assert response.choices[0].message.content == "Based on my analysis, the project uses FastAPI."
+        assert "X-FilthyToolFixer-Degraded" not in headers
+
+    @pytest.mark.asyncio
+    async def test_text_still_nudged_without_prior_tool_results(self, sample_tools, profile):
+        # Without prior tool results, text should still be nudged
+        text1 = make_response(content="I would search for files...")
+        good = make_response(tool_calls=[make_tool_call("search_files", {"query": "test"})])
+        backend = MockBackend([text1, good])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        request = make_request(tools=sample_tools)  # No tool results in history
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Should nudge and get tool call on attempt 2
+        assert backend.call_count == 2
+        assert response.choices[0].message.tool_calls is not None
+
+    @pytest.mark.asyncio
     async def test_text_response_nudge_triggers_tool_call(self, sample_tools, profile):
         # Model narrates first, then uses tools after nudge
         narration = make_response(content="I could search for that...")
