@@ -60,6 +60,7 @@ class ProfileLoader:
                 max_system_tokens=tc_data.get("max_system_tokens", 0),
                 exclude_tools=tc_data.get("exclude_tools", []),
                 num_ctx=tc_data.get("num_ctx", 0),
+                accept_text_after_tool_use=tc_data.get("accept_text_after_tool_use", False),
             ),
             escalation=EscalationConfig(
                 enabled=esc_data.get("enabled", False),

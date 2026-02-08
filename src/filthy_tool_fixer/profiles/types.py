@@ -26,6 +26,7 @@ class ToolCallingConfig:
     max_system_tokens: int = 0  # 0 = no limit
     exclude_tools: list[str] = field(default_factory=list)  # Remove these tools from backend requests
     num_ctx: int = 0  # Override Ollama context window size (0 = use default)
+    accept_text_after_tool_use: bool = False  # Accept text when conversation has prior tool results
 
 
 @dataclass

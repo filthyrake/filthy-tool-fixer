@@ -17,6 +17,7 @@ condense_system_prompt = true
 max_system_tokens = 800
 exclude_tools = ["question", "task", "skill", "todowrite", "todoread", "webfetch"]
 num_ctx = 16384
+accept_text_after_tool_use = true
 
 [escalation]
 enabled = false

@@ -135,9 +135,16 @@ class TestRetryLoop:
         assert response.choices[0].message.content == "Here is the answer directly."
 
     @pytest.mark.asyncio
-    async def test_text_accepted_when_prior_tool_results(self, sample_tools, profile):
-        # If conversation already has tool results (model has been using tools),
+    async def test_text_accepted_when_prior_tool_results(self, sample_tools):
+        # If profile opts in and conversation already has tool results,
         # a text response is the synthesized answer — accept immediately
+        profile = ModelProfile(
+            max_retries=2,
+            request_timeout=45.0,
+            backend_timeout=120.0,
+            tool_calling=ToolCallingConfig(accept_text_after_tool_use=True),
+            escalation=EscalationConfig(enabled=False),
+        )
         text_answer = make_response(content="Based on my analysis, the project uses FastAPI.")
         backend = MockBackend([text_answer])
         loop = RetryLoop(backend=backend, profile=profile)
@@ -162,8 +169,15 @@ class TestRetryLoop:
         assert "X-FilthyToolFixer-Degraded" not in headers
 
     @pytest.mark.asyncio
-    async def test_text_still_nudged_without_prior_tool_results(self, sample_tools, profile):
-        # Without prior tool results, text should still be nudged
+    async def test_text_still_nudged_without_prior_tool_results(self, sample_tools):
+        # Even with opt-in, without prior tool results text should still be nudged
+        profile = ModelProfile(
+            max_retries=2,
+            request_timeout=45.0,
+            backend_timeout=120.0,
+            tool_calling=ToolCallingConfig(accept_text_after_tool_use=True),
+            escalation=EscalationConfig(enabled=False),
+        )
         text1 = make_response(content="I would search for files...")
         good = make_response(tool_calls=[make_tool_call("search_files", {"query": "test"})])
         backend = MockBackend([text1, good])
@@ -175,6 +189,31 @@ class TestRetryLoop:
         )
 
         # Should nudge and get tool call on attempt 2
+        assert backend.call_count == 2
+        assert response.choices[0].message.tool_calls is not None
+
+    @pytest.mark.asyncio
+    async def test_text_nudged_when_profile_does_not_opt_in(self, sample_tools, profile):
+        # Default profile (accept_text_after_tool_use=False) should still nudge
+        text1 = make_response(content="Here's what I found...")
+        good = make_response(tool_calls=[make_tool_call("search_files", {"query": "test"})])
+        backend = MockBackend([text1, good])
+        loop = RetryLoop(backend=backend, profile=profile)
+
+        from filthy_tool_fixer.models import ChatMessage
+        messages = [
+            ChatMessage(role="user", content="Find tests"),
+            ChatMessage(role="assistant", content="", tool_calls=[
+                make_tool_call("read", {"file_path": "pyproject.toml"})
+            ]),
+            ChatMessage(role="tool", content="[result]"),
+        ]
+        request = make_request(tools=sample_tools, messages=messages)
+        response, headers = await loop.execute(
+            request=request, tools=sample_tools, budget_remaining=45.0, start_time=time.monotonic()
+        )
+
+        # Profile doesn't opt in — should nudge despite prior tool results
         assert backend.call_count == 2
         assert response.choices[0].message.tool_calls is not None
 
