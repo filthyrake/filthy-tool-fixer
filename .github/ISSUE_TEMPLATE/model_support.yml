@@ -1,0 +1,44 @@
+name: Model Support
+description: Request support for a new model or report model-specific issues
+labels: ["enhancement", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Want to see a new model supported, or have tuning notes for an existing one?
+
+  - type: input
+    id: model-name
+    attributes:
+      label: Model name
+      description: The full model name as used with Ollama
+      placeholder: e.g. mistral-large:123b-q4_K_M
+    validations:
+      required: true
+
+  - type: dropdown
+    id: request-type
+    attributes:
+      label: Request type
+      options:
+        - New model support
+        - Existing model needs tuning
+        - Model profile bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: |
+        For new models: link to the model, parameter count, architecture (dense/MoE), and any tool-calling notes you have.
+        For tuning: describe what's failing and what you've tried.
+    validations:
+      required: true
+
+  - type: textarea
+    id: test-results
+    attributes:
+      label: Test results
+      description: If you've tested the model, share what worked and what didn't (tool calling accuracy, common failure modes, etc.)
