@@ -173,10 +173,10 @@ The profile exists for experimentation. Use Maverick instead.
 **Why it works:**
 - Responds to error feedback and self-corrects parameter names on retry
 - Follows system prompt instructions about tool discovery (glob first, then read)
-- The proxy's param name repair handles its tendency to guess parameter names
+- The proxy's param name repair fixes minor near-miss names; broader mismatches are corrected via validation feedback and retries
 
 **Quirks:**
-- **Guesses parameter names.** Uses `filename` instead of `filePath`, `query` instead of `pattern`, etc. The retry loop catches and corrects these via validation feedback.
+- **Guesses parameter names.** Often produces near-miss names (e.g., `question` instead of `questions`, `filePath` instead of `file_path`). Near-misses are auto-repaired; larger deviations are corrected via validation feedback and retries.
 - **Slow cold starts.** First request after loading takes 60-70s; needs `backend_timeout = 300` to avoid timeouts.
 - **Assumes Node.js projects.** Without explicit guidance in the system suffix, it will try to read `package.json` before anything else — even for Python projects. The profile's system suffix now tells it to glob the root first.
 - **No escalation configured.** Runs standalone; no quality-tier Llama model is practical for on-demand escalation given memory constraints.
