@@ -1,0 +1,59 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below so we can reproduce and fix it.
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: Which model were you using?
+      placeholder: e.g. qwen3:30b-a3b, devstral-small2, llama4-maverick
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: Client
+      description: What client is talking to Filthy Tool Fixer?
+      placeholder: e.g. aider, OpenCode, curl, custom script
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you expect vs. what actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps or a curl command to reproduce the issue.
+      render: bash
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any relevant log output or response headers (X-FilthyLLM-* headers are especially helpful).
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Filthy Tool Fixer version or commit hash
+      placeholder: e.g. v0.3.0, abc1234
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Any other relevant details (OS, Ollama version, hardware, etc.)
