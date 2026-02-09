@@ -12,10 +12,9 @@ system_suffix = "You MUST respond with a tool call, not text. TOOL GUIDE:\n- rea
 temperature_override = 0.0
 strip_thinking = false
 keep_alive = "30m"
-condense_tools = true
+condense_tools = false
 condense_system_prompt = true
 max_system_tokens = 800
-exclude_tools = ["question", "task", "skill", "todowrite", "todoread", "webfetch"]
 num_ctx = 32768
 accept_text_after_tool_use = true
 
