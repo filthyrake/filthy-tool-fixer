@@ -1,0 +1,24 @@
+# GLM-4.7-Flash — 30B MoE (3B active), fast tier (Zhipu/Z.ai)
+# ~19GB Q4, fits on A30. 198K native context. MIT license.
+# Ollama 0.15.1+ includes tool calling quality improvements for this model.
+# Uses Qwen3-like JSON-in-XML tool call format in Ollama.
+
+[model]
+pattern = "glm-4.7-flash:*"
+max_retries = 3
+request_timeout = 360.0
+backend_timeout = 120.0
+
+[tool_calling]
+system_suffix = "CRITICAL RULES FOR TOOL USE:\n1. You MUST use the provided tools — never respond with text descriptions of what you would do.\n2. MATCH TOOLS TO INTENT: For questions or exploration, use READ-ONLY tools (read, glob, grep, bash). Only use write/edit tools when the user explicitly asks to create or modify something.\n3. START by reading relevant files (package.json, pyproject.toml, README, etc.) to understand the project before taking any action.\n4. Never invent tool names or parameters not in the provided definitions.\n5. Never ask the user which files to look at — find them yourself.\n6. Call the SIMPLEST tool that accomplishes the task. Prefer read over bash, glob over bash."
+temperature_override = 0.0
+strip_thinking = true
+keep_alive = "30m"
+condense_tools = true
+condense_system_prompt = true
+max_system_tokens = 800
+num_ctx = 65536
+accept_text_after_tool_use = true
+
+[escalation]
+enabled = false

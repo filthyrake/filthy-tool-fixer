@@ -10,6 +10,7 @@ Every model has its own personality when it comes to tool calling. This guide co
 | Qwen3-Coder 480B | Quality | 290GB hybrid | 1-2 min | Perfect | `qwen3-coder-480b.toml` |
 | Qwen3 30B | Fast | 18GB GPU | 10-18s | Good | `qwen3.toml` |
 | Qwen3 235B | Quality | 142GB hybrid | 2-5 min | Very good | `qwen3-235b.toml` |
+| GLM-4.7-Flash | Fast | 19GB GPU | ~2s | Excellent | `glm-4.7-flash.toml` |
 | GPT-OSS 20B | Fast | 12GB GPU | 1-4s | Good (simple), Weak (complex) | `gpt-oss.toml` |
 | GPT-OSS 120B | Quality | 65GB hybrid | 39-56s | Excellent | `gpt-oss-120b.toml` |
 | Llama 4 Maverick | Quality | large hybrid | varies | Moderate | `llama4-maverick.toml` |
@@ -141,7 +142,36 @@ escalation.enabled = false             # Nothing bigger to escalate to
 
 ---
 
-## Llama Family
+## GLM Family
+
+### GLM-4.7-Flash (30B MoE, 3B active)
+
+**Fast and clean.** Zhipu/Z.ai's open-weight model (MIT license). Different model family from everything else in the lineup — non-Western architecture, strong tau-Bench tool-use scores. Runs fully on GPU (~19GB Q4).
+
+**Why it works:**
+- Clean tool calls on first attempt — passed every test without retries
+- Correct tool selection even with multiple tools available
+- Proper parallel tool calls when appropriate
+- ~2s response time once warm
+- 198K native context (we set `num_ctx = 65536` for reliable tool use)
+
+**Quirks:**
+- Returns thinking in a separate `reasoning` field (not `<think>` tags in content) — our Pydantic models automatically drop this field, so thinking never leaks
+- Mixes explanatory text alongside tool calls — needs `accept_text_after_tool_use = true`
+- `strip_thinking = true` is set as a safety net but the real filtering happens via field dropping
+- Ollama 0.15.1+ required for tool calling quality fixes
+
+**Profile tuning:**
+```toml
+strip_thinking = true                 # Safety net (reasoning field auto-dropped)
+accept_text_after_tool_use = true     # Mixes text with tool calls
+condense_tools = true                 # 3B active params, keep context tight
+num_ctx = 65536                       # Needs large context for reliable tool use
+```
+
+---
+
+
 
 ### Llama 4 Maverick (400B MoE, 17B active)
 

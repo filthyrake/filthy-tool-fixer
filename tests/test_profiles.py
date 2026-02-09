@@ -88,3 +88,28 @@ max_retries = 1
         # Non-matching falls to default
         d = loader.match("other-model")
         assert d.max_retries == 1
+
+
+class TestGLMProfiles:
+    """Tests for GLM-4.7 model profiles."""
+
+    def test_glm_flash_matches(self):
+        loader = ProfileLoader("profiles")
+        profile = loader.match("glm-4.7-flash:latest")
+        assert profile.pattern == "glm-4.7-flash:*"
+
+    def test_glm_flash_settings(self):
+        loader = ProfileLoader("profiles")
+        profile = loader.match("glm-4.7-flash:latest")
+        assert profile.max_retries == 3
+        assert profile.backend_url == ""  # GPU, uses default primary
+        assert profile.tool_calling.strip_thinking is True
+        assert profile.tool_calling.condense_tools is True
+        assert profile.tool_calling.num_ctx == 65536
+        assert profile.tool_calling.accept_text_after_tool_use is True
+
+    def test_glm_flash_no_escalation(self):
+        """GLM-4.7 quality tier is cloud-only on Ollama, so no escalation."""
+        loader = ProfileLoader("profiles")
+        profile = loader.match("glm-4.7-flash:latest")
+        assert profile.escalation.enabled is False
