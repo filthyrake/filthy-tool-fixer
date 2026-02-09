@@ -12,7 +12,7 @@ system_suffix = "CRITICAL RULES FOR TOOL USE:\n1. You MUST use the provided tool
 temperature_override = 0.0
 strip_thinking = true
 keep_alive = "30m"
-condense_tools = true
+condense_tools = false
 condense_system_prompt = true
 max_system_tokens = 800
 
