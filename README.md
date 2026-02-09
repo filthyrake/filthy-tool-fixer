@@ -105,8 +105,9 @@ See [docs/models.md](docs/models.md) for detailed quirks and tuning notes per mo
 Our reference setup:
 
 - **Server**: Intel Xeon Platinum 8160, NVIDIA A30 24GB, 377GB RAM
-- **Fast models** (GPU): Qwen3-Coder 30B (19GB), Qwen3 30B (18GB), GPT-OSS 20B (12GB)
-- **Quality models** (hybrid CPU/GPU): Qwen3-Coder 480B (290GB), Qwen3 235B (142GB), GPT-OSS 120B (65GB)
+- **Fast models** (GPU): Qwen3-Coder 30B (19GB), Qwen3 30B (18GB), GLM-4.7-Flash (19GB), GPT-OSS 20B (12GB)
+- **Quality models** (hybrid CPU/GPU): Qwen3-Coder 480B (290GB), Qwen3 235B (142GB), GPT-OSS 120B (65GB), Llama 4 Maverick (large)
+- **Standalone** (hybrid CPU/GPU): Llama 3.3 70B (57GB)
 
 ## License
 
