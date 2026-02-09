@@ -156,7 +156,7 @@ escalation.enabled = false             # Nothing bigger to escalate to
 - 198K native context (we set `num_ctx = 65536` for reliable tool use)
 
 **Quirks:**
-- Returns thinking in a separate `reasoning` field (not `<think>` tags in content) — our Pydantic models automatically drop this field, so thinking never leaks
+- Returns thinking in a separate `reasoning` field (not `<think>` tags in content) — `ChatMessage` uses Pydantic's default `extra = "ignore"`, so the `reasoning` field is dropped during response parsing
 - Mixes explanatory text alongside tool calls — needs `accept_text_after_tool_use = true`
 - `strip_thinking = true` is set as a safety net but the real filtering happens via field dropping
 - Ollama 0.15.1+ required for tool calling quality fixes
@@ -171,7 +171,7 @@ num_ctx = 65536                       # Needs large context for reliable tool us
 
 ---
 
-
+## Llama Family
 
 ### Llama 4 Maverick (400B MoE, 17B active)
 
