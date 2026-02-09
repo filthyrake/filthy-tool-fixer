@@ -113,6 +113,11 @@ Create `opencode.json` in your project root:
           "attachment": true,
           "limit": { "context": 65536, "output": 16384 }
         },
+        "devstral-small-2:latest": {
+          "name": "Devstral Small 2 (Fast)",
+          "attachment": true,
+          "limit": { "context": 65536, "output": 8192 }
+        },
         "qwen3:30b-a3b": {
           "name": "Qwen3 30B (Fast)",
           "attachment": true,
