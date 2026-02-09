@@ -14,7 +14,7 @@ Every model has its own personality when it comes to tool calling. This guide co
 | GPT-OSS 120B | Quality | 65GB hybrid | 39-56s | Excellent | `gpt-oss-120b.toml` |
 | Llama 4 Maverick | Quality | large hybrid | varies | Moderate | `llama4-maverick.toml` |
 | Llama 4 Scout | Fast | - | - | Not working | `llama4-scout.toml` |
-| Llama 3.3 70B | Fast | - | - | Untested | `llama3.3.toml` |
+| Llama 3.3 70B | Standalone | 57GB hybrid | 60-100s | Moderate (with retries) | `llama3.3.toml` |
 
 ---
 
@@ -168,7 +168,27 @@ The profile exists for experimentation. Use Maverick instead.
 
 ### Llama 3.3 70B (Dense)
 
-**Untested.** Profile exists but hasn't been validated. Configuration assumes it behaves similarly to the Llama 4 family. If you test it, let us know.
+**Working.** A dense 70B model — no MoE here, so it's heavier on resources (~57GB, runs 59% CPU / 41% GPU on A30). Slower than the MoE models but produces usable tool calls with proxy assistance.
+
+**Why it works:**
+- Responds to error feedback and self-corrects parameter names on retry
+- Follows system prompt instructions about tool discovery (glob first, then read)
+- The proxy's param name repair fixes minor near-miss names; broader mismatches are corrected via validation feedback and retries
+
+**Quirks:**
+- **Guesses parameter names.** Often produces near-miss names (e.g., `question` instead of `questions`, `filePath` instead of `file_path`). Near-misses are auto-repaired; larger deviations are corrected via validation feedback and retries.
+- **Slow cold starts.** First request after loading takes 60-70s; needs `backend_timeout = 300` to avoid timeouts.
+- **Assumes Node.js projects.** Without explicit guidance in the system suffix, it will try to read `package.json` before anything else — even for Python projects. The profile's system suffix now tells it to glob the root first.
+- **No escalation configured.** Runs standalone; no quality-tier Llama model is practical for on-demand escalation given memory constraints.
+
+**Profile tuning:**
+```toml
+backend_timeout = 300.0               # Cold starts need headroom
+strip_thinking = false                 # No think tags
+condense_tools = true                  # Reduce context pressure
+accept_text_after_tool_use = true      # Let it give final answers
+escalation.enabled = false             # No escalation target
+```
 
 ---
 

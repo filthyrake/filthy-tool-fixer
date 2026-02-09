@@ -83,7 +83,7 @@ curl http://YOUR_SERVER:8079/v1/chat/completions \
 | **GPT-OSS 120B** | MoE (5.1B active) | 39-56s | Zero validation failures, handles complex schemas |
 | **Llama 4 Maverick** | MoE (17B active) | varies | Narrates + calls, rescue extracts tool calls |
 | **Llama 4 Scout** | MoE (17B active) | - | Not working for tool calling |
-| **Llama 3.3 70B** | Dense | - | Untested |
+| **Llama 3.3 70B** | Dense | 60-100s | Working, needs retries for param names |
 
 See [docs/models.md](docs/models.md) for detailed quirks and tuning notes per model.
 
