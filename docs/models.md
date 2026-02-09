@@ -10,6 +10,7 @@ Every model has its own personality when it comes to tool calling. This guide co
 | Qwen3-Coder 480B | Quality | 290GB hybrid | 1-2 min | Perfect | `qwen3-coder-480b.toml` |
 | Qwen3 30B | Fast | 18GB GPU | 10-18s | Good | `qwen3.toml` |
 | Qwen3 235B | Quality | 142GB hybrid | 2-5 min | Very good | `qwen3-235b.toml` |
+| Devstral Small 2 24B | Fast | 15GB GPU | 1-7s | Excellent | `devstral-small-2.toml` |
 | GLM-4.7-Flash | Fast | 19GB GPU | ~2s | Excellent | `glm-4.7-flash.toml` |
 | GPT-OSS 20B | Fast | 12GB GPU | 1-4s | Good (simple), Weak (complex) | `gpt-oss.toml` |
 | GPT-OSS 120B | Quality | 65GB hybrid | 39-56s | Excellent | `gpt-oss-120b.toml` |
@@ -138,6 +139,34 @@ max_retries = 2                        # Quality model, fewer retries needed
 request_timeout = 900.0                # Generous timeout for hybrid mode
 accept_text_after_tool_use = true      # Narrates at deeper conversations
 escalation.enabled = false             # Nothing bigger to escalate to
+```
+
+---
+
+## Devstral Family
+
+### Devstral Small 2 24B (Dense, Mistral)
+
+**Purpose-built for agentic coding.** Mistral's coding agent model, fine-tuned from Mistral Small 3.1. Dense 24B — not MoE, but still fits comfortably on A30 at ~15GB. Apache 2.0 license. 68% SWE-Bench Verified.
+
+**Why it's great:**
+- 100% first-attempt tool call accuracy in testing — zero retries, zero validation failures, zero param repairs
+- Maintained accuracy deep into conversations (40+ messages, 10+ chained tool calls)
+- Fast and consistent: 1-7s per tool call, speeds up as KV cache warms
+- First model family (Mistral) outside the Qwen/Llama/GLM/GPT-OSS lineup
+
+**Quirks:**
+- **Wanders on open-ended tasks without context cap.** The 384K native context is too much rope — on broad search tasks (e.g., "find all files that import X"), it can lose focus and start searching for unrelated things. Setting `num_ctx = 65536` fixes this.
+- No `<think>` tags, no embedded JSON blobs
+- No escalation partner available (no larger Mistral model on the server)
+
+**Profile tuning:**
+```toml
+strip_thinking = false                # No think tags
+accept_text_after_tool_use = true     # Let it give final answers
+condense_tools = true                 # Keep context tight
+num_ctx = 65536                       # Prevents wandering on open-ended tasks
+escalation.enabled = false            # No Mistral quality-tier available
 ```
 
 ---
