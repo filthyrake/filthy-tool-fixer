@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, AsyncIterator
 
@@ -28,12 +29,12 @@ def build_tool_call_schema(tools: list[ToolDefinition]) -> dict[str, Any]:
     tool_schemas = []
     for tool in tools:
         func = tool.function
-        # Each tool call has name + arguments matching the tool's parameter schema
+        # Each tool call has name + arguments as a JSON string
         tool_schema: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "const": func.name},
-                "arguments": func.parameters if func.parameters else {"type": "object"},
+                "arguments": {"type": "string"},
             },
             "required": ["name", "arguments"],
             "additionalProperties": False,
@@ -87,7 +88,8 @@ class VLLMAdapter(BackendAdapter):
         timeout: float | None = None,
         keep_alive: str | None = None,
     ) -> ChatCompletionResponse:
-        assert self._client is not None
+        if self._client is None:
+            raise RuntimeError("VLLMAdapter not started — call startup() first")
         payload = self._build_payload(request, keep_alive)
         payload["stream"] = False
 
@@ -106,7 +108,8 @@ class VLLMAdapter(BackendAdapter):
         timeout: float | None = None,
         keep_alive: str | None = None,
     ) -> AsyncIterator[bytes]:
-        assert self._client is not None
+        if self._client is None:
+            raise RuntimeError("VLLMAdapter not started — call startup() first")
         payload = self._build_payload(request, keep_alive)
         payload["stream"] = True
 
@@ -117,14 +120,25 @@ class VLLMAdapter(BackendAdapter):
             json=payload,
             timeout=httpx.Timeout(effective_timeout, connect=10.0),
         ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if line:
-                    yield (line + "\n").encode()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                error = {"error": {"message": f"Backend returned {e.response.status_code}", "type": "backend_error"}}
+                yield f"data: {json.dumps(error)}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+                return
+            try:
+                async for line in resp.aiter_lines():
+                    if line:
+                        yield (line + "\n\n").encode()
+            except asyncio.CancelledError:
+                log.info("stream_cancelled_by_client")
+                raise
 
     async def health_check(self) -> bool:
         try:
-            assert self._client is not None
+            if self._client is None:
+                return False
             resp = await self._client.get("/health", timeout=5.0)
             return resp.status_code == 200
         except Exception:

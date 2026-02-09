@@ -90,11 +90,17 @@ class OllamaAdapter(BackendAdapter):
             json=payload,
             timeout=httpx.Timeout(effective_timeout, connect=10.0),
         ) as resp:
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                error = {"error": {"message": f"Backend returned {e.response.status_code}", "type": "backend_error"}}
+                yield f"data: {json.dumps(error)}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+                return
             try:
                 async for line in resp.aiter_lines():
                     if line:
-                        yield (line + "\n").encode()
+                        yield (line + "\n\n").encode()
             except asyncio.CancelledError:
                 log.info("stream_cancelled_by_client")
                 raise

@@ -157,7 +157,7 @@ def _validate_single_call(
         validator = jsonschema.Draft7Validator(schema)
         for error in validator.iter_errors(args):
             # Skip errors we already reported (required, additionalProperties)
-            if error.validator in ("required",):
+            if error.validator in ("required", "additionalProperties"):
                 continue
             errors.append(
                 ValidationError(

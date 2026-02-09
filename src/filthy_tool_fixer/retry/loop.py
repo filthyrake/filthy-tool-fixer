@@ -7,6 +7,9 @@ import re
 import time
 import uuid
 from difflib import get_close_matches
+
+import httpx
+
 from filthy_tool_fixer.backends.base import BackendAdapter
 from filthy_tool_fixer.logging import get_logger
 from filthy_tool_fixer.models import (
@@ -68,7 +71,7 @@ class RetryLoop:
             remaining = budget_remaining - elapsed
 
             # Don't start a retry if insufficient time remains
-            if attempt > 0 and remaining < 10.0:
+            if attempt > 0 and remaining < 20.0:
                 log.info("retry_budget_exhausted", attempt=attempt, remaining=remaining)
                 break
 
@@ -81,6 +84,23 @@ class RetryLoop:
                     timeout=effective_timeout,
                     keep_alive=self._profile.tool_calling.keep_alive,
                 )
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                if status < 500:
+                    # 4xx = permanent error, don't retry
+                    log.warning("backend_client_error", attempt=attempt, status=status)
+                    break
+                # 5xx = transient, retry
+                log.warning("backend_server_error", attempt=attempt, status=status)
+                if attempt < max_retries:
+                    continue
+                break
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                # Transient network/timeout errors — retry
+                log.warning("backend_transient_error", attempt=attempt, error=str(e))
+                if attempt < max_retries:
+                    continue
+                break
             except Exception:
                 log.exception("backend_request_failed", attempt=attempt)
                 break
@@ -286,7 +306,8 @@ class RetryLoop:
         if failed_response:
             # Add a brief summary of what went wrong, not the full failed conversation
             summary = self._build_escalation_summary(failed_response, tools)
-            messages.append(ChatMessage(role="user", content=summary))
+            if summary:
+                messages.append(ChatMessage(role="user", content=summary))
 
         escalation_request = original_request.model_copy(
             update={
@@ -379,7 +400,10 @@ class RetryLoop:
     # Llama 4 pythonic: [func_name(param="val", param2=val2)]
     # May contain multiple calls: [func1(a=1), func2(b=2), func3(c=3)]
     _PYTHONIC_BRACKET_RE = re.compile(r"\[([^\]]+)\]", re.DOTALL)
-    _PYTHONIC_CALL_RE = re.compile(r"(\w+)\(([^)]*)\)", re.DOTALL)
+    # Match function calls, allowing quoted strings to contain parens
+    _PYTHONIC_CALL_RE = re.compile(
+        r"""(\w+)\(((?:[^()"']*|"[^"]*"|'[^']*')*)\)""", re.DOTALL
+    )
 
     def _rescue_tool_calls_from_text(
         self,
@@ -411,8 +435,9 @@ class RetryLoop:
                 return rescued
 
         # Try Llama 4 pythonic format: [func_name(param="val")]
-        bracket_match = self._PYTHONIC_BRACKET_RE.search(content)
-        if bracket_match:
+        # Try all bracket groups, not just the first (avoids false match on
+        # non-tool brackets like [1, 2, 3] appearing earlier in the text)
+        for bracket_match in self._PYTHONIC_BRACKET_RE.finditer(content):
             inner = bracket_match.group(1)
             pythonic_matches = self._PYTHONIC_CALL_RE.findall(inner)
             rescued = self._parse_pythonic_calls(pythonic_matches, tool_names)

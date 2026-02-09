@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import re
 import time
 from typing import AsyncIterator
@@ -22,8 +23,10 @@ from filthy_tool_fixer.retry.loop import RetryLoop
 
 log = get_logger(__name__)
 
-# Cache compiled think-tag patterns per profile
-_think_re_cache: dict[str, re.Pattern] = {}
+# Cache compiled think-tag patterns per profile (bounded)
+@functools.lru_cache(maxsize=32)
+def _compile_think_re(pattern: str) -> re.Pattern:
+    return re.compile(pattern, re.DOTALL)
 
 # Regex patterns for condensing tool descriptions
 _EXAMPLE_BLOCK_RE = re.compile(r"<example>.*?</example>", re.DOTALL)
@@ -232,9 +235,7 @@ class ProxyOrchestrator:
         """Remove thinking blocks from response content using the profile's pattern."""
         if not pattern:
             return response
-        if pattern not in _think_re_cache:
-            _think_re_cache[pattern] = re.compile(pattern, re.DOTALL)
-        compiled = _think_re_cache[pattern]
+        compiled = _compile_think_re(pattern)
         for choice in response.choices:
             if choice.message and choice.message.content:
                 choice.message.content = compiled.sub("", choice.message.content).strip()
