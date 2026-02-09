@@ -113,3 +113,28 @@ class TestGLMProfiles:
         loader = ProfileLoader("profiles")
         profile = loader.match("glm-4.7-flash:latest")
         assert profile.escalation.enabled is False
+
+
+class TestDevstralProfiles:
+    """Tests for Devstral Small 2 model profiles."""
+
+    def test_devstral_matches(self):
+        loader = ProfileLoader("profiles")
+        profile = loader.match("devstral-small-2:latest")
+        assert profile.pattern == "devstral-small-2:*"
+
+    def test_devstral_settings(self):
+        loader = ProfileLoader("profiles")
+        profile = loader.match("devstral-small-2:latest")
+        assert profile.max_retries == 3
+        assert profile.backend_url == ""  # GPU, uses default primary
+        assert profile.tool_calling.strip_thinking is False
+        assert profile.tool_calling.condense_tools is True
+        assert profile.tool_calling.num_ctx == 65536
+        assert profile.tool_calling.accept_text_after_tool_use is True
+
+    def test_devstral_no_escalation(self):
+        """No larger Mistral model available on the server."""
+        loader = ProfileLoader("profiles")
+        profile = loader.match("devstral-small-2:latest")
+        assert profile.escalation.enabled is False
