@@ -15,6 +15,7 @@ Our setup: Intel Xeon Platinum 8160, NVIDIA A30 24GB, 377GB RAM.
 |-------|------|---------|-------|
 | Qwen3-Coder 30B | 19GB | GPU (A30) | 1-15s |
 | Qwen3 30B | 18GB | GPU (A30) | 10-18s |
+| Devstral Small 2 24B | 15GB | GPU (A30) | 1-7s |
 | GPT-OSS 20B | 12GB | GPU (A30) | 1-4s |
 | Qwen3-Coder 480B | 290GB | Hybrid CPU/GPU | 1-2 min |
 | Qwen3 235B | 142GB | Hybrid CPU/GPU | 2-5 min |
@@ -31,6 +32,7 @@ The default Ollama installation runs on port 11434. This is your fast tier — m
 ollama pull qwen3-coder:30b
 ollama pull qwen3:30b-a3b
 ollama pull gpt-oss:20b
+ollama pull devstral-small-2:latest
 ```
 
 ### Escalation Instance (Quality Models)
@@ -76,6 +78,7 @@ Ollama loads models into memory on first request, which adds cold-start latency.
 curl http://localhost:11434/api/generate -d '{"model":"qwen3-coder:30b","prompt":"","keep_alive":"30m"}'
 curl http://localhost:11434/api/generate -d '{"model":"qwen3:30b-a3b","prompt":"","keep_alive":"30m"}'
 curl http://localhost:11434/api/generate -d '{"model":"gpt-oss:20b","prompt":"","keep_alive":"30m"}'
+curl http://localhost:11434/api/generate -d '{"model":"devstral-small-2:latest","prompt":"","keep_alive":"30m"}'
 
 # Quality tier
 curl http://localhost:11435/api/generate -d '{"model":"qwen3-coder:480b","prompt":"","keep_alive":"30m"}'
