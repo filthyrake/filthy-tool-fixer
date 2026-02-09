@@ -9,17 +9,31 @@
 
 ### Reference Hardware
 
-Our setup: Intel Xeon Platinum 8160, NVIDIA A30 24GB, 377GB RAM.
+Our setup: Intel Xeon Platinum 8160, NVIDIA A30 24GB + NVIDIA A2 16GB, 377GB RAM.
 
-| Model | Size | Runs on | Speed |
-|-------|------|---------|-------|
-| Qwen3-Coder 30B | 19GB | GPU (A30) | 1-15s |
-| Qwen3 30B | 18GB | GPU (A30) | 10-18s |
-| Devstral Small 2 24B | 15GB | GPU (A30) | 1-7s |
-| GPT-OSS 20B | 12GB | GPU (A30) | 1-4s |
-| Qwen3-Coder 480B | 290GB | Hybrid CPU/GPU | 1-2 min |
-| Qwen3 235B | 142GB | Hybrid CPU/GPU | 2-5 min |
-| GPT-OSS 120B | 65GB | Hybrid CPU/GPU | 39-56s |
+Ollama automatically splits model layers across multiple GPUs. For quality-tier models that run in hybrid CPU/GPU mode, adding a second GPU — even a low-end one — can dramatically reduce response times by moving layers off CPU RAM.
+
+| Model | Size | Runs on | Speed (A30 only) | Speed (A30 + A2) |
+|-------|------|---------|-------------------|-------------------|
+| Qwen3-Coder 30B | 19GB | GPU | 1-15s | 1-15s |
+| Qwen3 30B | 18GB | GPU | 10-18s | 10-18s |
+| Devstral Small 2 24B | 15GB | GPU | 1-7s | 1-7s |
+| GPT-OSS 20B | 12GB | GPU | 1-4s | 1-4s |
+| Qwen3-Coder 480B | 290GB | Hybrid CPU/GPU | 1-2 min | **22-24s** |
+| Qwen3 235B | 142GB | Hybrid CPU/GPU | 2-5 min | *untested* |
+| GPT-OSS 120B | 65GB | Hybrid CPU/GPU | 39-56s | **6-17s** |
+
+### Why a second GPU helps
+
+LLM inference speed is bottlenecked by memory bandwidth, not compute. The three memory tiers have very different bandwidths:
+
+| Tier | Bandwidth | Example |
+|------|-----------|---------|
+| HBM2 (A30) | ~933 GB/s | Primary GPU |
+| GDDR6 (A2) | ~200 GB/s | Secondary GPU |
+| DDR4 (system RAM) | ~100-140 GB/s | CPU offload |
+
+The A2 is ~4.5x slower than the A30 but ~1.5-2x faster than system RAM. For models that spill to CPU, every layer moved from DDR4 to the A2 runs faster. The biggest wins come when the second GPU pushes past the 50% GPU threshold — GPT-OSS 120B (65GB) went from ~37% GPU to ~57% GPU, resulting in a 3-4x speedup.
 
 ## Ollama Setup
 

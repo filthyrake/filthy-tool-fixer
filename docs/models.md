@@ -7,13 +7,13 @@ Every model has its own personality when it comes to tool calling. This guide co
 | Model | Tier | VRAM/RAM | Speed | Tool Accuracy | Profile |
 |-------|------|----------|-------|---------------|---------|
 | Qwen3-Coder 30B | Fast | 19GB GPU | 1-15s | Excellent | `qwen3-coder.toml` |
-| Qwen3-Coder 480B | Quality | 290GB hybrid | 1-2 min | Perfect | `qwen3-coder-480b.toml` |
+| Qwen3-Coder 480B | Quality | 290GB hybrid | 22-24s | Perfect | `qwen3-coder-480b.toml` |
 | Qwen3 30B | Fast | 18GB GPU | 10-18s | Good | `qwen3.toml` |
 | Qwen3 235B | Quality | 142GB hybrid | 2-5 min | Very good | `qwen3-235b.toml` |
 | Devstral Small 2 24B | Fast | 15GB GPU | 1-7s | Excellent | `devstral-small-2.toml` |
 | GLM-4.7-Flash | Fast | 19GB GPU | ~2s | Excellent | `glm-4.7-flash.toml` |
 | GPT-OSS 20B | Fast | 12GB GPU | 1-4s | Good (simple), Weak (complex) | `gpt-oss.toml` |
-| GPT-OSS 120B | Quality | 65GB hybrid | 39-56s | Excellent | `gpt-oss-120b.toml` |
+| GPT-OSS 120B | Quality | 65GB hybrid | 6-17s | Excellent | `gpt-oss-120b.toml` |
 | Llama 4 Maverick | Quality | large hybrid | varies | Moderate | `llama4-maverick.toml` |
 | Llama 4 Scout | Fast | - | - | Not working | `llama4-scout.toml` |
 | Llama 3.3 70B | Standalone | 57GB hybrid | 60-100s | Moderate (with retries) | `llama3.3.toml` |
@@ -48,7 +48,7 @@ condense_tools = true         # Reduce context pressure
 
 The 480B quality-tier coder model. 290GB, runs hybrid CPU/GPU on port 11435. Tool call accuracy is **perfect** — every completion validated first attempt with zero retries.
 
-**Limitations:** Speed. ~1-2 minutes per turn on short contexts, longer conversations (8+ messages) can exceed timeouts. This is a hardware limitation (290GB on 377GB RAM with 24GB VRAM), not a model quality issue.
+**Limitations:** Speed. With a single A30 (24GB VRAM), ~1-2 minutes per turn and longer conversations can exceed timeouts. Adding a second GPU (A2 16GB) brought this down to **22-24s per turn** — a dramatic improvement from moving more layers off CPU.
 
 **Quirks:**
 - Same clean tool-calling behavior as the 30B
@@ -126,7 +126,7 @@ The quality-tier GPT-OSS model. ~65GB in MXFP4, runs hybrid CPU/GPU on port 1143
 - Matches o4-mini on TauBench
 - 100% first-attempt tool call accuracy across all tested tools
 - Handles complex nested schemas (like OpenCode's `question` tool) that break the 20B
-- 39-56s per call once warm, first request ~120s (loading 65GB into memory)
+- With A30 only: 39-56s per call. With A30 + A2: **6-17s per call** (3-4x speedup from pushing past 50% GPU)
 - Escalation target for GPT-OSS 20B
 
 **Quirks:**
