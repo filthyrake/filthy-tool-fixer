@@ -20,7 +20,7 @@ Ollama automatically splits model layers across multiple GPUs. For quality-tier 
 | Devstral Small 2 24B | 15GB | GPU | 1-7s | 1-7s |
 | GPT-OSS 20B | 12GB | GPU | 1-4s | 1-4s |
 | Qwen3-Coder 480B | 290GB | Hybrid CPU/GPU | 1-2 min | **22-24s** |
-| Qwen3 235B | 142GB | Hybrid CPU/GPU | 2-5 min | *untested* |
+| Qwen3 235B | 142GB | Hybrid CPU/GPU | 2-5 min | **~2.5 min** |
 | GPT-OSS 120B | 65GB | Hybrid CPU/GPU | 39-56s | **6-17s** |
 
 ### Why a second GPU helps

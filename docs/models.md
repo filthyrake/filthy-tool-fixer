@@ -79,7 +79,7 @@ max_system_tokens = 800        # Hard cap on system prompt
 
 ### Qwen3 235B-A22B (MoE, 22B active)
 
-**The big gun.** Runs hybrid CPU/GPU (~2-5 min per tool call). Don't use it as your daily driver — it's the escalation target when the 30B can't figure it out.
+**The big gun.** Runs hybrid CPU/GPU (~2.5 min per tool call with dual GPU, 2-5 min with A30 only). Don't use it as your daily driver — it's the escalation target when the 30B can't figure it out. At 142GB, only 26% fits on GPU even with both cards — the A2 helps but doesn't move the needle as dramatically as it does for smaller quality models.
 
 **Why it works:**
 - Rarely needs retries (`max_retries = 1`)
