@@ -79,6 +79,7 @@ curl http://YOUR_SERVER:8079/v1/chat/completions \
 | **Qwen3-Coder 480B** | MoE (35B active) | 1-2 min | Perfect accuracy, limited by RAM bandwidth |
 | **Qwen3 30B** | MoE (3B active) | 10-18s | Reliable workhorse, needs think-tag stripping |
 | **Qwen3 235B** | MoE (22B active) | 2-5 min | Escalation target, rarely needs retries |
+| **GLM-4.7-Flash** | MoE (3B active) | ~2s | Clean tool calls, different model family, MIT license |
 | **GPT-OSS 20B** | MoE (3.6B active) | 1-4s | Fast, simple tools great, complex schemas need escalation |
 | **GPT-OSS 120B** | MoE (5.1B active) | 39-56s | Zero validation failures, handles complex schemas |
 | **Llama 4 Maverick** | MoE (17B active) | varies | Narrates + calls, rescue extracts tool calls |
