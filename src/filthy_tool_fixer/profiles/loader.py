@@ -50,7 +50,7 @@ class ProfileLoader:
             backend_url=model_data.get("backend_url", ""),
             tool_calling=ToolCallingConfig(
                 system_suffix=tc_data.get("system_suffix", ""),
-                temperature_override=tc_data.get("temperature_override", 0.0),
+                temperature_override=tc_data.get("temperature_override"),
                 tool_choice_override=tc_data.get("tool_choice_override", ""),
                 strip_thinking=tc_data.get("strip_thinking", False),
                 think_tag_pattern=tc_data.get("think_tag_pattern", "<think>.*?</think>"),

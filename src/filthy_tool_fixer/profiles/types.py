@@ -16,7 +16,7 @@ class EscalationConfig:
 @dataclass
 class ToolCallingConfig:
     system_suffix: str = ""
-    temperature_override: float | None = 0.0
+    temperature_override: float | None = None  # None = passthrough client temperature
     strip_thinking: bool = False
     think_tag_pattern: str = "<think>.*?</think>"  # Regex pattern for thinking tags
     tool_choice_override: str = ""  # Override tool_choice sent to backend (e.g. "required")

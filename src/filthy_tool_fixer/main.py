@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -24,20 +25,43 @@ from filthy_tool_fixer.proxy import ProxyOrchestrator
 
 log = get_logger(__name__)
 
+
+class _RequestCounter:
+    """In-flight request counter with drain support for graceful shutdown.
+
+    All methods are synchronous — safe under asyncio's cooperative model
+    since no await can interleave between the read-modify-write steps.
+    """
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.drain_event = asyncio.Event()
+        self.drain_event.set()  # Initially drained
+
+    def enter(self) -> None:
+        self.count += 1
+        self.drain_event.clear()
+
+    def exit(self) -> None:
+        self.count -= 1
+        if self.count == 0:
+            self.drain_event.set()
+
+
 # Module-level references set during lifespan
 _orchestrator: ProxyOrchestrator | None = None
 _profile_loader: ProfileLoader | None = None
 _primary_backend: OllamaAdapter | None = None
 _escalation_backend: OllamaAdapter | None = None
-_in_flight: int = 0
-_drain_event: asyncio.Event | None = None
+_requests = _RequestCounter()
 
 _SHUTDOWN_DRAIN_TIMEOUT = 15.0  # Max seconds to wait for in-flight requests
+_STREAM_CHUNK_TIMEOUT = 60.0  # Max seconds to wait between stream chunks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global _orchestrator, _profile_loader, _primary_backend, _escalation_backend, _drain_event
+    global _orchestrator, _profile_loader, _primary_backend, _escalation_backend
 
     setup_logging()
     log.info(
@@ -46,24 +70,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         escalation_url=settings.escalation_backend_url,
     )
 
-    _drain_event = asyncio.Event()
-    _drain_event.set()  # Initially "drained" (no requests)
-
     # Load profiles
     _profile_loader = ProfileLoader(settings.profiles_dir)
 
-    # Initialize backends
+    # Initialize backends (tolerate startup failures for graceful degradation)
     _primary_backend = OllamaAdapter(
         base_url=settings.backend_url,
         default_timeout=settings.backend_timeout,
     )
-    await _primary_backend.startup()
+    try:
+        await _primary_backend.startup()
+    except Exception:
+        log.exception("primary_backend_startup_failed")
 
     _escalation_backend = OllamaAdapter(
         base_url=settings.escalation_backend_url,
         default_timeout=settings.escalation_timeout,
     )
-    await _escalation_backend.startup()
+    try:
+        await _escalation_backend.startup()
+    except Exception:
+        log.exception("escalation_backend_startup_failed")
 
     _orchestrator = ProxyOrchestrator(
         primary_backend=_primary_backend,
@@ -76,15 +103,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     # Wait for in-flight requests to drain before closing backends
-    if _in_flight > 0:
-        log.info("shutdown_draining", in_flight=_in_flight)
+    if _requests.count > 0:
+        log.info("shutdown_draining", in_flight=_requests.count)
         try:
-            await asyncio.wait_for(_drain_event.wait(), timeout=_SHUTDOWN_DRAIN_TIMEOUT)
+            await asyncio.wait_for(
+                _requests.drain_event.wait(), timeout=_SHUTDOWN_DRAIN_TIMEOUT
+            )
         except asyncio.TimeoutError:
-            log.warning("shutdown_drain_timeout", in_flight=_in_flight)
+            log.warning("shutdown_drain_timeout", in_flight=_requests.count)
 
-    await _primary_backend.shutdown()
-    await _escalation_backend.shutdown()
+    # Shutdown backends with timeout to prevent hanging
+    for backend, name in [(_primary_backend, "primary"), (_escalation_backend, "escalation")]:
+        try:
+            await asyncio.wait_for(backend.shutdown(), timeout=5.0)
+        except asyncio.TimeoutError:
+            log.warning(f"{name}_backend_shutdown_timeout")
+        except Exception:
+            log.exception(f"{name}_backend_shutdown_error")
+
     log.info("stopped")
 
 
@@ -135,8 +171,6 @@ async def list_models() -> JSONResponse:
 
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(request: Request):
-    global _in_flight
-
     if _orchestrator is None or _profile_loader is None:
         return JSONResponse(
             status_code=503,
@@ -155,8 +189,7 @@ async def chat_completions(request: Request):
                 status_code=413,
                 content={"error": {"message": "Request body too large", "type": "invalid_request_error"}},
             )
-        import json as _json
-        body = _json.loads(body_bytes)
+        body = json.loads(body_bytes)
         chat_request = ChatCompletionRequest.model_validate(body)
     except Exception:
         log.exception("invalid_request")
@@ -183,9 +216,7 @@ async def chat_completions(request: Request):
         last_role=chat_request.messages[-1].role if chat_request.messages else "",
     )
 
-    _in_flight += 1
-    if _drain_event is not None:
-        _drain_event.clear()
+    _requests.enter()
     try:
         result = await asyncio.wait_for(
             _orchestrator.handle_request(chat_request, profile),
@@ -207,9 +238,7 @@ async def chat_completions(request: Request):
             content={"error": {"message": "Backend request failed", "type": "proxy_error"}},
         )
     finally:
-        _in_flight -= 1
-        if _in_flight == 0 and _drain_event is not None:
-            _drain_event.set()
+        _requests.exit()
 
     elapsed = time.monotonic() - start
 
@@ -217,7 +246,7 @@ async def chat_completions(request: Request):
     if hasattr(result, "__aiter__"):
         log.info("response_streaming", elapsed_ms=round(elapsed * 1000))
         return StreamingResponse(
-            result,
+            _timeout_stream(result),
             media_type="text/event-stream",
             headers={"X-FilthyToolFixer-Request-ID": rid},
         )
@@ -254,19 +283,42 @@ async def chat_completions(request: Request):
     )
 
 
+async def _timeout_stream(
+    stream: AsyncIterator[bytes],
+    chunk_timeout: float = _STREAM_CHUNK_TIMEOUT,
+) -> AsyncIterator[bytes]:
+    """Wrap a stream with per-chunk timeout to prevent hanging on stalled backends."""
+    aiter = stream.__aiter__()
+    while True:
+        try:
+            chunk = await asyncio.wait_for(aiter.__anext__(), timeout=chunk_timeout)
+            yield chunk
+        except StopAsyncIteration:
+            break
+        except asyncio.TimeoutError:
+            log.warning("stream_chunk_timeout", timeout=chunk_timeout)
+            error = {"error": {"message": "Backend stream stalled", "type": "proxy_timeout"}}
+            yield f"data: {json.dumps(error)}\n\n".encode()
+            yield b"data: [DONE]\n\n"
+            break
+        except asyncio.CancelledError:
+            raise
+
+
 async def _synthesize_sse(response) -> AsyncIterator[bytes]:
     """Synthesize SSE events from a buffered ChatCompletionResponse.
 
     Emits the response as a single chunk followed by [DONE].
     """
-    import json
-
     data = response.model_dump(exclude_none=True)
     # Convert to streaming format
     data["object"] = "chat.completion.chunk"
     for choice in data.get("choices", []):
         if "message" in choice:
             delta = choice.pop("message")
+            # Ensure content field is present (some clients expect it even as null)
+            if "content" not in delta:
+                delta["content"] = None
             # Streaming tool calls require an index field on each tool call
             for i, tc in enumerate(delta.get("tool_calls", [])):
                 tc["index"] = i
